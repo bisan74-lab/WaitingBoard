@@ -8,20 +8,21 @@
 - **내 순번 확인** (`/status/:id`): 앞에 몇 팀 남았는지 실시간(자동 새로고침) 확인
 - **관리자 대시보드** (`/admin`):
   - 대기/호출 목록, 대기 인원 통계, 경과 대기 시간 표시
-  - **실시간 갱신** (SSE) — 손님이 등록하면 즉시 목록에 반영
+  - **자동 갱신**(폴링) — 손님이 등록하면 곧 목록에 반영 (서버리스 호환)
   - **카카오톡 호출** 버튼 — 자리 준비 시 메시지 발송 (착석/취소 처리)
   - **QR 코드** 표시·인쇄
   - **설정** — 가게 이름, 카카오톡 메시지 템플릿 편집
+- 손님 등록 화면 우측 상단 **⚙︎ 아이콘**으로 관리자 모드 전환, **모바일 대응** UI
 
 ## 기술 스택
 
-- 백엔드: Node.js + Express (네이티브 의존성 없음)
-- 저장소: JSON 파일(`data/store.json`) — 소규모 매장용. 필요 시 `src/db.js`만 교체하면 SQLite/Postgres로 확장 가능
+- 백엔드: Node.js + Express (네이티브 의존성 없음) — 로컬 서버/Vercel 서버리스 모두 지원
+- 저장소: **Redis(Upstash/Vercel KV)** 또는 **JSON 파일** 자동 선택 (`src/stores/`)
+  - KV 환경변수가 있으면 Redis, 없으면 파일(로컬 개발)
 - QR: `qrcode` (서버에서 생성)
 - 프런트: 순수 HTML/CSS/JS (빌드 불필요)
-- 실시간: Server-Sent Events
 
-## 실행
+## 로컬 실행
 
 ```bash
 npm install
@@ -30,14 +31,30 @@ npm start
 # http://localhost:3000/admin  (관리자)
 ```
 
+## Vercel 배포
+
+이 앱은 Vercel 서버리스로 배포할 수 있도록 구성돼 있습니다(`vercel.json`, `api/index.js`). **서버리스는 상태가 없으므로 데이터 유지를 위해 KV(Redis)가 필요합니다.**
+
+1. **GitHub에 푸시** → Vercel에서 **New Project → 이 저장소 Import**
+2. **Storage 탭 → KV(Upstash Redis) 생성 후 프로젝트에 연결**
+   - 연결하면 `KV_REST_API_URL` / `KV_REST_API_TOKEN` 이 자동으로 주입됩니다.
+3. (선택) **Settings → Environment Variables** 에 알림톡/관리자 암호 등 추가
+   - `MESSAGING_PROVIDER`, `SOLAPI_*` 등 (아래 "알림톡" 참고), `ADMIN_PASSCODE`
+4. **Deploy** → `https://<프로젝트>.vercel.app/` (손님) / `.../admin` (관리자)
+
+이후에는 **GitHub에 push 할 때마다 Vercel이 자동 재배포**합니다(기존에 쓰시던 방식과 동일).
+
+> ⚠️ KV를 연결하지 않으면 서버리스 환경에서 대기 데이터가 요청마다 사라집니다. 반드시 2단계를 진행하세요. (KV 없이 항상 켜진 서버가 필요하면 Render·Railway 등에서는 코드 변경 없이 파일 저장으로도 동작합니다.)
+
 ## 환경 변수 (선택)
 
 | 변수 | 설명 |
 |------|------|
 | `PORT` | 서버 포트 (기본 3000) |
-| `PUBLIC_URL` | 외부 접속 주소. QR/링크 생성 시 사용 (예: `https://wait.myshop.com`) |
+| `PUBLIC_URL` | 외부 접속 주소. QR/링크 생성 시 사용 (Vercel은 보통 자동 감지) |
 | `ADMIN_PASSCODE` | 설정 시 관리자 화면 접근에 암호 필요 (미설정 시 개방) |
-| `KAKAO_ACCESS_TOKEN` | 카카오 액세스 토큰. 설정 시 실제 카카오톡 발송(아래 참고) |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Redis(Upstash/Vercel KV) 접속 정보. 있으면 Redis 저장소 사용(서버리스 필수) |
+| `MESSAGING_PROVIDER` 외 | 알림톡 발송 설정 (아래 참고) |
 
 ## 카카오톡 / 알림톡 발송
 
@@ -91,9 +108,16 @@ ALIMTALK_SENDER_KEY=...      ALIMTALK_TEMPLATE_CODE=...  ALIMTALK_SENDER=0255500
 
 ```
 WaitingBoard/
-├── server.js          # Express 서버 · API · SSE · QR
+├── server.js          # Express 앱 (app export · 로컬은 listen) · API · QR
+├── vercel.json        # Vercel 서버리스 배포 설정
+├── api/
+│   └── index.js       # Vercel 함수 진입점 (server.js 재사용)
 ├── src/
-│   ├── db.js          # JSON 파일 저장소 (교체 지점)
+│   ├── db.js          # 저장소 백엔드 선택기 (Redis ↔ 파일)
+│   ├── stores/
+│   │   ├── shared.js      # 공용 기본값/헬퍼
+│   │   ├── file.js        # 파일(JSON) 저장소 — 로컬
+│   │   └── redis.js       # Redis(Upstash/Vercel KV) — 서버리스
 │   ├── kakao.js       # 발송 디스패처 (provider 선택/폴백)
 │   └── providers/     # 알림톡 어댑터
 │       ├── demo.js        # 데모(발송 안 함)
@@ -102,9 +126,9 @@ WaitingBoard/
 │       ├── aligo.js       # Aligo(알리고)
 │       └── kakao_memo.js  # 카카오 나에게 보내기
 ├── public/
-│   ├── index.html     # 손님 대기 등록
+│   ├── index.html     # 손님 대기 등록 (⚙︎ 관리자 전환 아이콘)
 │   ├── status.html    # 손님 내 순번 확인
-│   ├── admin.html     # 관리자 대시보드
+│   ├── admin.html     # 관리자 대시보드 (모바일 대응)
 │   └── styles.css
-└── data/store.json    # 런타임 데이터(gitignore)
+└── data/store.json    # 로컬 런타임 데이터(gitignore)
 ```

@@ -55,6 +55,20 @@ a { color: var(--brand-2); }
   border-radius: 10px;
   font-size: 18px;
 }
+/* 손님 화면 → 관리자 모드 전환 아이콘 */
+.admin-link {
+  margin-left: auto;
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border-radius: 11px;
+  background: var(--card); border: 1px solid var(--line);
+  color: var(--muted); text-decoration: none;
+  font-size: 19px; line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .1s, color .15s, border-color .15s;
+}
+.admin-link:hover { color: var(--text); border-color: var(--brand); }
+.admin-link:active { transform: scale(0.94); }
 
 .card {
   background: var(--card);
@@ -239,3 +253,32 @@ textarea { resize: vertical; min-height: 72px; }
 .spacer { height: 8px; }
 .flex { display: flex; gap: 10px; align-items: center; }
 .grow { flex: 1; }
+
+/* ───── 모바일 대응 ───── */
+@media (max-width: 640px) {
+  .container { padding: 18px 14px 48px; }
+
+  .topbar { align-items: flex-start; }
+  .toolbar { width: 100%; }
+  .toolbar .btn.small { flex: 1; }
+
+  .stats { gap: 8px; }
+  .stat { min-width: 0; padding: 12px; }
+  .stat .n { font-size: 24px; }
+
+  /* 대기 행: 번호+정보 한 줄, 액션 버튼은 아래 전체 폭으로 */
+  .row { grid-template-columns: 48px 1fr; row-gap: 12px; padding: 13px 14px; }
+  .row .num { width: 48px; height: 48px; font-size: 19px; }
+  .row .actions { grid-column: 1 / -1; justify-content: stretch; }
+  .row .actions .btn.small { flex: 1; padding: 11px 8px; }
+
+  .modal { max-width: 100%; }
+  .qr-box img { width: 220px; height: 220px; }
+  .big-number { font-size: 60px; }
+}
+
+/* 아주 작은 화면(구형 폰) */
+@media (max-width: 360px) {
+  .stat .l { font-size: 12px; }
+  .row .who .name { font-size: 15px; }
+}

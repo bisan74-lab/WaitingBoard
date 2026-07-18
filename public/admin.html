@@ -260,33 +260,36 @@
       m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('show'); });
     });
 
-    // ----- 초기 로드 & 실시간 -----
+    // ----- 초기 로드 & 폴링 -----
+    // 서버리스(Vercel)에서는 SSE 지속 연결이 유지되지 않으므로 주기적 폴링으로 갱신합니다.
+    let loadInFlight = false;
     async function load() {
-      const res = await api('/api/waitlist');
-      if (!res.ok) throw new Error('목록 로드 실패');
-      const d = await res.json();
-      entries = d.entries; settings = d.settings;
-      const MODE_LABEL = { demo: '데모', solapi: 'Solapi 알림톡', nhncloud: 'NHN Cloud 알림톡', aligo: 'Aligo 알림톡', kakao_memo: '나에게보내기' };
-      $('#kakaoMode').textContent = '발송: ' + (MODE_LABEL[d.kakaoMode] || d.kakaoMode);
-      applySettings(); render();
+      if (loadInFlight) return;
+      loadInFlight = true;
+      try {
+        const res = await api('/api/waitlist');
+        if (!res.ok) throw new Error('목록 로드 실패');
+        const d = await res.json();
+        entries = d.entries; settings = d.settings;
+        const MODE_LABEL = { demo: '데모', solapi: 'Solapi 알림톡', nhncloud: 'NHN Cloud 알림톡', aligo: 'Aligo 알림톡', kakao_memo: '나에게보내기' };
+        $('#kakaoMode').textContent = '발송: ' + (MODE_LABEL[d.kakaoMode] || d.kakaoMode);
+        applySettings(); render();
+      } finally {
+        loadInFlight = false;
+      }
     }
 
-    function connectStream() {
-      const es = new EventSource('/api/stream');
-      es.addEventListener('created', (ev) => { upsert(JSON.parse(ev.data)); render(); });
-      es.addEventListener('updated', (ev) => { upsert(JSON.parse(ev.data)); render(); });
-      es.addEventListener('settings', (ev) => { settings = JSON.parse(ev.data); applySettings(); render(); });
-      es.onerror = () => {/* 자동 재연결 */};
-    }
-    function upsert(e) {
-      const i = entries.findIndex((x) => x.id === e.id);
-      if (i >= 0) entries[i] = e; else entries.push(e);
+    function startPolling() {
+      // 탭이 보일 때만 폴링하여 불필요한 요청을 줄입니다.
+      setInterval(() => {
+        if (document.visibilityState === 'visible') load().catch(() => {});
+      }, 4000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') load().catch(() => {});
+      });
     }
 
-    // 대기 시간 갱신용
-    setInterval(render, 30000);
-
-    load().then(connectStream).catch((err) => toast(err.message, 'err'));
+    load().then(startPolling).catch((err) => toast(err.message, 'err'));
   </script>
 </body>
 </html>
