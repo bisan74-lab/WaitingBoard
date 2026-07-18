@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>내 대기 순번</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="brand"><span class="logo">🍽</span><span id="storeBrand">대기 현황</span></div>
+
+    <div id="loading" class="card center" style="margin-top:20px">불러오는 중...</div>
+
+    <div id="content" style="display:none">
+      <div class="card center" style="margin-top:20px">
+        <div class="muted" style="margin-bottom:6px">내 대기번호</div>
+        <div class="big-number" id="number">–</div>
+        <div class="spacer"></div>
+        <div id="statusArea"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="flex">
+          <div class="grow">
+            <div class="muted" style="font-size:13px">예약자</div>
+            <div id="nameLine" style="font-weight:700;font-size:16px">–</div>
+          </div>
+          <span id="statusPill" class="pill">대기중</span>
+        </div>
+      </div>
+
+      <p class="center muted" style="margin-top:18px;font-size:13px">
+        이 화면은 자동으로 새로고침됩니다.<br/>자리가 준비되면 카카오톡 안내와 함께 여기에서 알려드려요.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const id = location.pathname.split('/').pop();
+    const $ = (s) => document.querySelector(s);
+
+    const STATUS = {
+      waiting: { label: '대기중', cls: 'waiting' },
+      called: { label: '호출됨 · 입장해 주세요', cls: 'called' },
+      seated: { label: '착석 완료', cls: 'seated' },
+      cancelled: { label: '취소됨', cls: 'cancelled' },
+    };
+
+    async function refresh() {
+      try {
+        const res = await fetch('/api/waitlist/' + id + '/status');
+        if (!res.ok) throw new Error();
+        const d = await res.json();
+        $('#loading').style.display = 'none';
+        $('#content').style.display = 'block';
+        document.title = `${d.number}번 · 대기 현황`;
+        $('#storeBrand').textContent = d.storeName || '대기 현황';
+        $('#number').textContent = d.number + '번';
+        $('#nameLine').textContent = `${d.name}님 · ${d.partySize}명`;
+
+        const st = STATUS[d.status] || STATUS.waiting;
+        const pill = $('#statusPill');
+        pill.textContent = st.label;
+        pill.className = 'pill ' + st.cls;
+
+        const area = $('#statusArea');
+        if (d.status === 'waiting') {
+          area.innerHTML = d.ahead > 0
+            ? `<div class="ahead">앞에 <b>${d.ahead}</b>팀 대기 중</div>`
+            : `<div class="ahead">🎉 곧 입장하실 차례예요!</div>`;
+        } else if (d.status === 'called') {
+          area.innerHTML = `<div class="ahead">✅ <b>입장</b>해 주세요!</div>`;
+        } else if (d.status === 'seated') {
+          area.innerHTML = `<div class="ahead muted">착석 완료되었습니다. 맛있게 드세요 🙂</div>`;
+        } else {
+          area.innerHTML = `<div class="ahead muted">대기가 취소되었습니다.</div>`;
+        }
+      } catch (e) {
+        $('#loading').textContent = '대기 정보를 찾을 수 없습니다.';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

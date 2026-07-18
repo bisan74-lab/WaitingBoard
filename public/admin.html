@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>대기 관리 대시보드</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container wide">
+    <div class="topbar">
+      <div class="brand"><span class="logo">🍽</span><span id="storeBrand">대기 관리</span></div>
+      <div class="toolbar">
+        <span id="kakaoMode" class="mode-badge">카카오: -</span>
+        <button class="btn small secondary" id="qrBtn">📱 QR 코드</button>
+        <button class="btn small secondary" id="settingsBtn">⚙︎ 설정</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="n" id="statWaiting">0</div><div class="l">대기중</div></div>
+      <div class="stat"><div class="n" id="statCalled">0</div><div class="l">호출됨</div></div>
+      <div class="stat"><div class="n" id="statPeople">0</div><div class="l">대기 인원(명)</div></div>
+    </div>
+
+    <div id="list" class="list"></div>
+    <div id="empty" class="empty" style="display:none">현재 대기 중인 손님이 없습니다.</div>
+  </div>
+
+  <!-- QR 모달 -->
+  <div class="modal-backdrop" id="qrModal">
+    <div class="modal qr-box">
+      <h3>손님 등록 QR</h3>
+      <p class="muted" style="font-size:13px">손님이 스캔하면 대기 등록 화면이 열립니다.</p>
+      <img id="qrImg" alt="QR" />
+      <p class="muted" id="qrUrl" style="font-size:12px;word-break:break-all"></p>
+      <div class="flex" style="margin-top:10px">
+        <button class="btn small secondary grow" id="qrPrint">🖨 인쇄</button>
+        <button class="btn small grow" id="qrClose">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 설정 모달 -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal">
+      <h3>설정</h3>
+      <label for="storeName">가게 이름</label>
+      <input id="storeName" type="text" maxlength="40" />
+      <label for="tpl">카카오톡 호출 메시지 템플릿</label>
+      <textarea id="tpl" maxlength="300"></textarea>
+      <p class="muted" style="font-size:12px">치환자: <code>{name}</code> <code>{party}</code> <code>{store}</code> <code>{number}</code></p>
+      <div id="settingsError" class="error"></div>
+      <div class="flex" style="margin-top:14px">
+        <button class="btn small secondary grow" id="settingsCancel">취소</button>
+        <button class="btn small grow" id="settingsSave">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 카카오 발송 모달 -->
+  <div class="modal-backdrop" id="notifyModal">
+    <div class="modal">
+      <h3>카카오톡 호출</h3>
+      <p class="muted" id="notifyWho" style="font-size:14px"></p>
+      <label for="notifyMsg">보낼 메시지</label>
+      <textarea id="notifyMsg" style="min-height:110px" maxlength="300"></textarea>
+      <div id="notifyError" class="error"></div>
+      <div class="flex" style="margin-top:14px">
+        <button class="btn small secondary grow" id="notifyCancel">취소</button>
+        <button class="btn small grow" id="notifySend">📨 카카오톡 보내기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    let PASSCODE = sessionStorage.getItem('adminPasscode') || '';
+    let settings = { storeName: '', messageTemplate: '' };
+    let entries = [];
+
+    function authHeaders() {
+      return PASSCODE ? { 'x-admin-passcode': PASSCODE } : {};
+    }
+    async function api(url, opts = {}) {
+      const res = await fetch(url, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts.headers || {}) },
+      });
+      if (res.status === 401) {
+        const code = prompt('관리자 암호를 입력하세요');
+        if (code) { PASSCODE = code; sessionStorage.setItem('adminPasscode', code); return api(url, opts); }
+        throw new Error('인증이 필요합니다.');
+      }
+      return res;
+    }
+
+    function toast(msg, type = '') {
+      const t = $('#toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + type;
+      setTimeout(() => (t.className = 'toast'), 2600);
+    }
+
+    function elapsed(iso) {
+      const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+      if (min < 1) return '방금';
+      if (min < 60) return `${min}분 대기`;
+      return `${Math.floor(min / 60)}시간 ${min % 60}분 대기`;
+    }
+    function maskPhone(p) {
+      if (!p) return '연락처 없음';
+      return p.replace(/(\d{3})-?(\d{3,4})-?(\d{4})/, '$1-$2-$3');
+    }
+
+    const STATUS_PILL = {
+      waiting: ['대기중', 'waiting'],
+      called: ['호출됨', 'called'],
+      seated: ['착석', 'seated'],
+      cancelled: ['취소', 'cancelled'],
+    };
+
+    function render() {
+      const active = entries
+        .filter((e) => e.status === 'waiting' || e.status === 'called')
+        .sort((a, b) => a.number - b.number);
+
+      $('#statWaiting').textContent = active.filter((e) => e.status === 'waiting').length;
+      $('#statCalled').textContent = active.filter((e) => e.status === 'called').length;
+      $('#statPeople').textContent = active.reduce((s, e) => s + (e.partySize || 0), 0);
+
+      const list = $('#list');
+      $('#empty').style.display = active.length ? 'none' : 'block';
+      list.innerHTML = active.map((e) => {
+        const [plabel, pcls] = STATUS_PILL[e.status] || STATUS_PILL.waiting;
+        const notified = e.notifiedCount ? ` · 📨${e.notifiedCount}` : '';
+        return `
+        <div class="row ${e.status}">
+          <div class="num">${e.number}</div>
+          <div class="who">
+            <div class="name">${escapeHtml(e.name)} <span class="pill ${pcls}" style="margin-left:6px">${plabel}</span></div>
+            <div class="meta">${e.partySize}명 · ${maskPhone(e.phone)} · ${elapsed(e.createdAt)}${notified}</div>
+            ${e.memo ? `<div class="meta">📝 ${escapeHtml(e.memo)}</div>` : ''}
+          </div>
+          <div class="actions">
+            <button class="btn small" data-notify="${e.id}">📨 호출</button>
+            <button class="btn small secondary" data-seat="${e.id}">착석</button>
+            <button class="btn small secondary" data-cancel="${e.id}">취소</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // 이벤트 위임
+    $('#list').addEventListener('click', (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.dataset.notify) openNotify(t.dataset.notify);
+      if (t.dataset.seat) setStatus(t.dataset.seat, 'seated');
+      if (t.dataset.cancel) {
+        if (confirm('대기를 취소할까요?')) setStatus(t.dataset.cancel, 'cancelled');
+      }
+    });
+
+    async function setStatus(id, status) {
+      try {
+        const res = await api(`/api/waitlist/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+        if (!res.ok) throw new Error((await res.json()).error);
+        toast(status === 'seated' ? '착석 처리했습니다.' : '취소했습니다.', 'ok');
+      } catch (err) { toast(err.message || '처리 실패', 'err'); }
+    }
+
+    // ----- 카카오 발송 모달 -----
+    let notifyTargetId = null;
+    function renderTpl(tpl, e) {
+      return tpl.replace(/\{name\}/g, e.name).replace(/\{party\}/g, e.partySize)
+        .replace(/\{store\}/g, settings.storeName).replace(/\{number\}/g, e.number);
+    }
+    function openNotify(id) {
+      const e = entries.find((x) => x.id === id);
+      if (!e) return;
+      notifyTargetId = id;
+      $('#notifyWho').textContent = `${e.number}번 · ${e.name}님 (${e.partySize}명) · ${maskPhone(e.phone)}`;
+      $('#notifyMsg').value = renderTpl(settings.messageTemplate, e);
+      $('#notifyError').classList.remove('show');
+      $('#notifyModal').classList.add('show');
+    }
+    $('#notifyCancel').onclick = () => $('#notifyModal').classList.remove('show');
+    $('#notifySend').onclick = async () => {
+      const btn = $('#notifySend');
+      btn.disabled = true;
+      try {
+        const res = await api(`/api/waitlist/${notifyTargetId}/notify`, {
+          method: 'POST', body: JSON.stringify({ message: $('#notifyMsg').value }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || '발송 실패');
+        $('#notifyModal').classList.remove('show');
+        toast(d.mode === 'demo' ? '데모 모드: 호출 처리(실제 발송 없음)' : '카카오톡을 발송했습니다.', 'ok');
+      } catch (err) {
+        const box = $('#notifyError'); box.textContent = err.message; box.classList.add('show');
+      } finally { btn.disabled = false; }
+    };
+
+    // ----- QR 모달 -----
+    $('#qrBtn').onclick = async () => {
+      $('#qrModal').classList.add('show');
+      const res = await fetch('/api/qr');
+      const d = await res.json();
+      $('#qrImg').src = d.qr;
+      $('#qrUrl').textContent = d.url;
+    };
+    $('#qrClose').onclick = () => $('#qrModal').classList.remove('show');
+    $('#qrPrint').onclick = () => {
+      const w = window.open('', '_blank');
+      w.document.write(`<div style="text-align:center;font-family:sans-serif;padding:40px">
+        <h2>${escapeHtml(settings.storeName || '대기 등록')}</h2>
+        <p>QR을 스캔하여 대기 등록하세요</p>
+        <img src="${$('#qrImg').src}" style="width:340px"/></div>`);
+      w.document.close(); w.focus(); w.print();
+    };
+
+    // ----- 설정 모달 -----
+    $('#settingsBtn').onclick = () => {
+      $('#storeName').value = settings.storeName;
+      $('#tpl').value = settings.messageTemplate;
+      $('#settingsError').classList.remove('show');
+      $('#settingsModal').classList.add('show');
+    };
+    $('#settingsCancel').onclick = () => $('#settingsModal').classList.remove('show');
+    $('#settingsSave').onclick = async () => {
+      try {
+        const res = await api('/api/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ storeName: $('#storeName').value.trim(), messageTemplate: $('#tpl').value }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error);
+        settings = await res.json();
+        applySettings();
+        $('#settingsModal').classList.remove('show');
+        toast('설정을 저장했습니다.', 'ok');
+      } catch (err) {
+        const box = $('#settingsError'); box.textContent = err.message; box.classList.add('show');
+      }
+    };
+
+    function applySettings() {
+      $('#storeBrand').textContent = settings.storeName || '대기 관리';
+      document.title = (settings.storeName ? settings.storeName + ' · ' : '') + '대기 관리';
+    }
+
+    // 배경 클릭 시 닫기
+    document.querySelectorAll('.modal-backdrop').forEach((m) => {
+      m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('show'); });
+    });
+
+    // ----- 초기 로드 & 실시간 -----
+    async function load() {
+      const res = await api('/api/waitlist');
+      if (!res.ok) throw new Error('목록 로드 실패');
+      const d = await res.json();
+      entries = d.entries; settings = d.settings;
+      $('#kakaoMode').textContent = '카카오: ' + (d.kakaoMode === 'demo' ? '데모' : '실발송');
+      applySettings(); render();
+    }
+
+    function connectStream() {
+      const es = new EventSource('/api/stream');
+      es.addEventListener('created', (ev) => { upsert(JSON.parse(ev.data)); render(); });
+      es.addEventListener('updated', (ev) => { upsert(JSON.parse(ev.data)); render(); });
+      es.addEventListener('settings', (ev) => { settings = JSON.parse(ev.data); applySettings(); render(); });
+      es.onerror = () => {/* 자동 재연결 */};
+    }
+    function upsert(e) {
+      const i = entries.findIndex((x) => x.id === e.id);
+      if (i >= 0) entries[i] = e; else entries.push(e);
+    }
+
+    // 대기 시간 갱신용
+    setInterval(render, 30000);
+
+    load().then(connectStream).catch((err) => toast(err.message, 'err'));
+  </script>
+</body>
+</html>
