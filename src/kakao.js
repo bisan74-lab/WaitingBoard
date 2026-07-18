@@ -1,82 +1,103 @@
 'use strict';
 
 /**
- * 카카오톡 메시지 발송 모듈.
+ * 메시지 발송 디스패처.
  *
- * 실제 "손님(제3자)에게" 알림을 보내려면 카카오 비즈니스 채널 + 알림톡(AlimTalk)
- * 또는 친구톡 계약이 필요합니다. 그 부분은 계약/발신프로필 심사가 있어야 하므로,
- * 이 모듈은 다음 두 가지 모드를 지원하도록 설계했습니다.
+ * 알림톡(AlimTalk)은 카카오가 개별 사업자에게 직접 API를 제공하지 않고
+ * 중계 대행사(솔루션 업체)를 통해 발송하는 것이 일반적입니다. 업체마다 인증/
+ * 페이로드가 다르므로, 아래처럼 provider를 교체할 수 있는 구조로 구성했습니다.
  *
- *  1) demo  : 환경변수가 없을 때(기본). 실제 발송 없이 발송 내용을 기록/반환합니다.
- *             화면·기능 흐름을 그대로 확인할 수 있습니다.
- *  2) memo  : KAKAO_ACCESS_TOKEN 이 설정된 경우 카카오 "나에게 보내기" API로
- *             실제 카카오톡 메시지를 전송합니다(토큰 소유자 본인에게 발송되는
- *             카카오 기본 기능으로, 연동 검증용).
+ * 발송 업체 선택: 환경변수 MESSAGING_PROVIDER
+ *   - 'demo'       (기본) 실제 발송 없이 기록만
+ *   - 'solapi'     Solapi(CoolSMS) 알림톡
+ *   - 'nhncloud'   NHN Cloud(Toast) 알림톡
+ *   - 'aligo'      Aligo(알리고) 알림톡
+ *   - 'kakao_memo' 카카오 나에게 보내기(연동 검증용)
+ *   - 'auto'       설정된(isConfigured) 알림톡 provider를 자동 선택
  *
- * 실제 운영에서 손님에게 발송하려면 sendAlimTalk() 자리에 계약된
- * 알림톡 API 호출을 채우면 됩니다. 인터페이스는 동일하게 유지됩니다.
+ * 미설정 시 안전하게 demo로 폴백합니다.
  */
 
-const KAKAO_ACCESS_TOKEN = process.env.KAKAO_ACCESS_TOKEN || '';
 const PUBLIC_URL = process.env.PUBLIC_URL || '';
 
-function currentMode() {
-  return KAKAO_ACCESS_TOKEN ? 'memo' : 'demo';
+const providers = {
+  demo: require('./providers/demo'),
+  solapi: require('./providers/solapi'),
+  nhncloud: require('./providers/nhncloud'),
+  aligo: require('./providers/aligo'),
+  kakao_memo: require('./providers/kakao_memo'),
+};
+
+// 자동 선택 시 시도 순서
+const AUTO_ORDER = ['solapi', 'nhncloud', 'aligo', 'kakao_memo'];
+
+function resolveProvider() {
+  const want = (process.env.MESSAGING_PROVIDER || 'demo').toLowerCase();
+
+  if (want === 'auto') {
+    const found = AUTO_ORDER.map((id) => providers[id]).find((p) => p && p.isConfigured());
+    return found || providers.demo;
+  }
+
+  const chosen = providers[want];
+  if (!chosen) {
+    console.warn(`[messaging] 알 수 없는 provider '${want}', demo로 폴백합니다.`);
+    return providers.demo;
+  }
+  if (!chosen.isConfigured()) {
+    console.warn(`[messaging] provider '${want}' 환경변수 미설정, demo로 폴백합니다.`);
+    return providers.demo;
+  }
+  return chosen;
 }
 
-async function sendViaMemoApi(text, linkUrl) {
-  const templateObject = {
-    object_type: 'text',
-    text,
-    link: linkUrl ? { web_url: linkUrl, mobile_web_url: linkUrl } : {},
-  };
-  const res = await fetch(
-    'https://kapi.kakao.com/v2/api/talk/memo/default/send',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${KAKAO_ACCESS_TOKEN}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        template_object: JSON.stringify(templateObject),
-      }),
-    }
-  );
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.result_code !== 0) {
-    const msg =
-      body.msg || body.error_description || `HTTP ${res.status}`;
-    throw new Error(`카카오 API 오류: ${msg}`);
-  }
-  return body;
+/** 현재 활성 provider id (관리자 화면 배지에 사용) */
+function currentMode() {
+  return resolveProvider().id;
+}
+
+/** 사용 가능한(설정 완료된) provider 목록 */
+function availableProviders() {
+  return Object.values(providers).map((p) => ({
+    id: p.id,
+    label: p.label,
+    configured: p.isConfigured(),
+  }));
 }
 
 /**
+ * 통합 발송 인터페이스.
  * @param {object} args
- * @param {string} args.text  발송할 메시지 본문
- * @param {string} [args.phone] 수신자 전화번호(알림톡 연동 시 사용)
- * @param {string} [args.linkUrl] 메시지에 첨부할 링크
- * @returns {Promise<{ok:boolean, mode:string, text:string, error?:string}>}
+ * @param {string} args.text        최종 본문(대체발송/데모/검증용). 알림톡 본문은 승인 템플릿을 따릅니다.
+ * @param {string} [args.phone]     수신자 번호
+ * @param {string} [args.linkUrl]   첨부 링크
+ * @param {object} [args.variables] 템플릿 변수 { key: value }
+ * @param {string} [args.subject]   알림톡 제목(일부 업체/템플릿 유형)
+ * @returns {Promise<{ok:boolean, mode:string, text:string, providerMessageId?:string, error?:string}>}
  */
-async function sendMessage({ text, phone, linkUrl }) {
-  const mode = currentMode();
+async function sendMessage({ text, phone, linkUrl, variables, subject }) {
+  const provider = resolveProvider();
   const link = linkUrl || PUBLIC_URL || undefined;
 
-  if (mode === 'demo') {
-    console.log(
-      `[카카오:demo] ${phone || '(번호없음)'} → ${text.replace(/\n/g, ' ')}`
-    );
-    return { ok: true, mode, text };
-  }
-
   try {
-    await sendViaMemoApi(text, link);
-    return { ok: true, mode, text };
+    const result = await provider.send({
+      to: phone,
+      text,
+      linkUrl: link,
+      variables,
+      subject,
+      fallbackText: text,
+    });
+    return {
+      ok: true,
+      mode: provider.id,
+      text,
+      providerMessageId: result && result.providerMessageId,
+    };
   } catch (err) {
-    console.error('[카카오:memo] 발송 실패:', err.message);
-    return { ok: false, mode, text, error: err.message };
+    console.error(`[messaging:${provider.id}] 발송 실패:`, err.message);
+    return { ok: false, mode: provider.id, text, error: err.message };
   }
 }
 
-module.exports = { sendMessage, currentMode };
+module.exports = { sendMessage, currentMode, availableProviders };

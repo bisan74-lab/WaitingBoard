@@ -266,7 +266,8 @@
       if (!res.ok) throw new Error('목록 로드 실패');
       const d = await res.json();
       entries = d.entries; settings = d.settings;
-      $('#kakaoMode').textContent = '카카오: ' + (d.kakaoMode === 'demo' ? '데모' : '실발송');
+      const MODE_LABEL = { demo: '데모', solapi: 'Solapi 알림톡', nhncloud: 'NHN Cloud 알림톡', aligo: 'Aligo 알림톡', kakao_memo: '나에게보내기' };
+      $('#kakaoMode').textContent = '발송: ' + (MODE_LABEL[d.kakaoMode] || d.kakaoMode);
       applySettings(); render();
     }
 

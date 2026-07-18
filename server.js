@@ -124,10 +124,19 @@ app.post('/api/waitlist/:id/notify', requireAdmin, async (req, res) => {
     : renderTemplate(settings.messageTemplate, entry, settings);
 
   const linkUrl = statusUrl(req, entry.id);
+  // 알림톡 승인 템플릿의 #{변수} 치환에 사용됩니다.
+  const variables = {
+    name: entry.name,
+    party: String(entry.partySize),
+    store: settings.storeName,
+    number: String(entry.number),
+    url: linkUrl,
+  };
   const result = await kakao.sendMessage({
     text,
     phone: entry.phone,
     linkUrl,
+    variables,
   });
 
   if (!result.ok) {
