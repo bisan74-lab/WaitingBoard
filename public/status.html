@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>내 대기 순번</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🍽%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -18,6 +19,8 @@
         <div class="big-number" id="number">–</div>
         <div class="spacer"></div>
         <div id="statusArea"></div>
+        <button id="comingBtn" class="btn" style="display:none">🙋 네, 지금 갈게요</button>
+        <div id="comingDone" class="ahead" style="display:none;margin-top:12px">✅ 가시는 것으로 전달했어요. 호출을 멈췄습니다.</div>
       </div>
 
       <div class="card" style="margin-top:16px">
@@ -43,9 +46,22 @@
     const STATUS = {
       waiting: { label: '대기중', cls: 'waiting' },
       called: { label: '호출됨 · 입장해 주세요', cls: 'called' },
+      coming: { label: '가는 중', cls: 'called' },
       seated: { label: '착석 완료', cls: 'seated' },
       cancelled: { label: '취소됨', cls: 'cancelled' },
     };
+
+    async function sendComing() {
+      const btn = $('#comingBtn');
+      btn.disabled = true; btn.textContent = '전달 중...';
+      try {
+        await fetch('/api/waitlist/' + id + '/coming', { method: 'POST' });
+        refresh();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = '🙋 네, 지금 갈게요';
+      }
+    }
+    $('#comingBtn').addEventListener('click', sendComing);
 
     async function refresh() {
       try {
@@ -64,6 +80,10 @@
         pill.textContent = st.label;
         pill.className = 'pill ' + st.cls;
 
+        // '가는 중' 응답 버튼: 호출됨 상태에서만 노출
+        $('#comingBtn').style.display = d.status === 'called' ? 'block' : 'none';
+        $('#comingDone').style.display = d.status === 'coming' ? 'block' : 'none';
+
         const area = $('#statusArea');
         if (d.status === 'waiting') {
           area.innerHTML = d.ahead > 0
@@ -71,6 +91,8 @@
             : `<div class="ahead">🎉 곧 입장하실 차례예요!</div>`;
         } else if (d.status === 'called') {
           area.innerHTML = `<div class="ahead">✅ <b>입장</b>해 주세요!</div>`;
+        } else if (d.status === 'coming') {
+          area.innerHTML = `<div class="ahead">🚶 가시는 중으로 확인되었습니다.</div>`;
         } else if (d.status === 'seated') {
           area.innerHTML = `<div class="ahead muted">착석 완료되었습니다. 맛있게 드세요 🙂</div>`;
         } else {

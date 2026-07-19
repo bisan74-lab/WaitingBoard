@@ -29,6 +29,30 @@ app.get('/api/admin/check', requireAdmin, (req, res) => {
   res.json({ ok: true, protected: Boolean(ADMIN_PASSCODE) });
 });
 
+// ---------- 연결 상태 점검(저장소/발송) ----------
+app.get('/api/health', requireAdmin, wrap(async (req, res) => {
+  const storage = { backend: db.backend, connected: false };
+  try {
+    // 실제 읽기를 수행해 저장소(특히 Redis REST) 연결을 확인
+    await db.getSettings();
+    storage.connected = true;
+  } catch (err) {
+    storage.error = err.message;
+  }
+
+  const provider = kakao.currentMode();
+  res.json({
+    storage,
+    messaging: {
+      provider,
+      live: provider !== 'demo',
+      providers: kakao.availableProviders(),
+    },
+    serverless: Boolean(process.env.VERCEL),
+    time: new Date().toISOString(),
+  });
+}));
+
 // ---------- 손님: 대기 등록 ----------
 app.post('/api/waitlist', wrap(async (req, res) => {
   const { name, phone, partySize, memo } = req.body || {};
@@ -75,16 +99,46 @@ app.get('/api/waitlist', requireAdmin, wrap(async (req, res) => {
 // ---------- 관리자: 상태 변경 ----------
 app.post('/api/waitlist/:id/status', requireAdmin, wrap(async (req, res) => {
   const { status } = req.body || {};
-  const allowed = ['waiting', 'called', 'seated', 'cancelled'];
+  const allowed = ['waiting', 'called', 'coming', 'seated', 'cancelled'];
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: '잘못된 상태값입니다.' });
   }
+  const now = new Date().toISOString();
   const patch = { status };
-  if (status === 'called') patch.calledAt = new Date().toISOString();
-  if (status === 'seated') patch.seatedAt = new Date().toISOString();
+  if (status === 'called') patch.calledAt = now;
+  if (status === 'coming') patch.comingAt = now; // 재호출 중지
+  if (status === 'seated') patch.seatedAt = now;
   const updated = await db.patchEntry(req.params.id, patch);
   if (!updated) return res.status(404).json({ error: '대상을 찾을 수 없습니다.' });
   res.json(updated);
+}));
+
+// ---------- 손님: "가는 중" 응답 (재호출 중지) ----------
+// 손님 상태 화면에서 직접 누르므로 관리자 인증 없이 허용.
+app.post('/api/waitlist/:id/coming', wrap(async (req, res) => {
+  const entry = await db.getEntry(req.params.id);
+  if (!entry) return res.status(404).json({ error: '대기 정보를 찾을 수 없습니다.' });
+  if (entry.status === 'seated' || entry.status === 'cancelled') {
+    return res.json({ ok: true, status: entry.status }); // 이미 종료된 건 변경 없음
+  }
+  const updated = await db.patchEntry(entry.id, {
+    status: 'coming',
+    comingAt: new Date().toISOString(),
+  });
+  res.json({ ok: true, status: updated.status });
+}));
+
+// ---------- 자동 재호출 트리거 ----------
+// 로컬(미니PC)에서는 아래 setInterval이, Vercel에서는 Cron 또는 열려있는
+// 대시보드가 이 엔드포인트를 호출해 1분마다 응답 없는 손님을 재호출합니다.
+app.all('/api/cron/recall', wrap(async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  const auth = req.get('authorization') || '';
+  const adminOk = ADMIN_PASSCODE && req.get('x-admin-passcode') === ADMIN_PASSCODE;
+  const cronOk = secret ? auth === `Bearer ${secret}` : true; // secret 없으면 개방(로컬)
+  if (!(cronOk || adminOk)) return res.status(401).json({ error: 'unauthorized' });
+  const recalled = await processRecalls();
+  res.json({ ok: true, recalled });
 }));
 
 // ---------- 관리자: 카카오톡 호출 메시지 발송 ----------
@@ -113,9 +167,12 @@ app.post('/api/waitlist/:id/notify', requireAdmin, wrap(async (req, res) => {
     return res.status(502).json({ error: result.error || '발송에 실패했습니다.', mode: result.mode });
   }
 
+  const now = new Date().toISOString();
   const updated = await db.patchEntry(entry.id, {
-    status: entry.status === 'waiting' ? 'called' : entry.status,
-    calledAt: entry.calledAt || new Date().toISOString(),
+    // 대기중이면 호출로 전환. 이미 '오는중'이면 그대로 두어 재호출 대상에서 제외.
+    status: entry.status === 'waiting' || entry.status === 'called' ? 'called' : entry.status,
+    calledAt: entry.calledAt || now,
+    lastNotifiedAt: now,
     notifiedCount: (entry.notifiedCount || 0) + 1,
   });
   res.json({ ok: true, mode: result.mode, text, entry: updated });
@@ -182,6 +239,52 @@ function renderTemplate(tpl, entry, settings) {
     .replace(/\{number\}/g, entry.number);
 }
 
+// ---------- 자동 재호출 로직 ----------
+const RECALL_INTERVAL_MS = Number(process.env.RECALL_INTERVAL_MS || 60 * 1000); // 재호출 간격(기본 1분)
+const RECALL_MAX = Number(process.env.RECALL_MAX_ATTEMPTS || 10); // 최대 호출 횟수(0=무제한, 과호출 방지)
+
+function publicStatusUrl(id) {
+  const base = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  return base ? `${base}/status/${id}` : '';
+}
+
+async function recallOne(entry, settings) {
+  const text = renderTemplate(settings.messageTemplate, entry, settings);
+  const url = publicStatusUrl(entry.id);
+  const variables = {
+    name: entry.name,
+    party: String(entry.partySize),
+    store: settings.storeName,
+    number: String(entry.number),
+    url,
+  };
+  const result = await kakao.sendMessage({ text, phone: entry.phone, linkUrl: url || undefined, variables });
+  if (result.ok) {
+    await db.patchEntry(entry.id, {
+      lastNotifiedAt: new Date().toISOString(),
+      notifiedCount: (entry.notifiedCount || 0) + 1,
+    });
+  }
+  return result.ok;
+}
+
+// 응답이 없는 '호출됨' 손님을 1분마다 재호출. coming/seated/cancelled 는 제외됩니다.
+async function processRecalls() {
+  const now = Date.now();
+  const settings = await db.getSettings();
+  const list = await db.getEntries({ includeArchived: false });
+  let count = 0;
+  for (const e of list) {
+    if (e.status !== 'called') continue;
+    if (RECALL_MAX > 0 && (e.notifiedCount || 0) >= RECALL_MAX) continue;
+    const last = e.lastNotifiedAt ? new Date(e.lastNotifiedAt).getTime() : 0;
+    if (now - last < RECALL_INTERVAL_MS) continue;
+    // eslint-disable-next-line no-await-in-loop
+    if (await recallOne(e, settings)) count += 1;
+  }
+  return count;
+}
+
 // 로컬에서 직접 실행할 때만 리슨(서버리스에서는 app만 export)
 if (require.main === module) {
   app.listen(PORT, () => {
@@ -190,8 +293,15 @@ if (require.main === module) {
     console.log(`  · 관리자:     http://localhost:${PORT}/admin`);
     console.log(`  · 카카오 모드: ${kakao.currentMode()}`);
     if (ADMIN_PASSCODE) console.log('  · 관리자 암호 보호: 사용');
+    console.log(`  · 자동 재호출: ${Math.round(RECALL_INTERVAL_MS / 1000)}초 간격, 최대 ${RECALL_MAX || '무제한'}회`);
     console.log('');
   });
+
+  // 헤드리스(모니터 없는 미니PC)에서도 브라우저 없이 자동 재호출이 동작하도록
+  // 서버가 주기적으로 응답 없는 손님을 재호출합니다.
+  setInterval(() => {
+    processRecalls().catch((e) => console.error('자동 재호출 오류:', e.message));
+  }, 15000);
 }
 
 module.exports = app;

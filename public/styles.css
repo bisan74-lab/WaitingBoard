@@ -208,6 +208,22 @@ textarea { resize: vertical; min-height: 72px; }
   display: grid; grid-template-columns: 56px 1fr auto; gap: 14px; align-items: center;
 }
 .row.called { border-color: rgba(245,158,11,.5); }
+.row.coming { border-color: rgba(34,197,94,.45); }
+
+/* 처리완료: 회색 + 가로 취소선 */
+.row.done { opacity: .5; background: var(--card-2); }
+.row.done .num { text-decoration: line-through; color: var(--muted); }
+.row.done .who .name { text-decoration: line-through; color: var(--muted); }
+.row.done .who .meta { text-decoration: line-through; }
+.done-label { color: var(--muted); font-size: 12px; font-weight: 700; margin: 10px 2px 2px; }
+
+/* 전화 걸기 버튼(앵커) */
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.btn.callbtn { background: var(--card-2); border: 1px solid var(--line); color: var(--text); }
+.btn.callbtn[disabled] { opacity: .45; }
+
+/* 오는중 pill */
+.pill.coming { color: #fff; background: rgba(34,197,94,.16); border-color: rgba(34,197,94,.4); }
 .row .num {
   width: 56px; height: 56px; border-radius: 12px;
   background: var(--card-2); display: grid; place-items: center;
@@ -254,6 +270,20 @@ textarea { resize: vertical; min-height: 72px; }
 .flex { display: flex; gap: 10px; align-items: center; }
 .grow { flex: 1; }
 
+/* 연결 상태 패널 */
+.section-label { font-size: 13px; font-weight: 700; color: var(--muted); margin: 4px 0 8px; }
+.health {
+  background: var(--card-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 9px; margin-bottom: 6px;
+}
+.health .hrow { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
+.health .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 7px; vertical-align: middle; }
+.health .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+.health .dot.off { background: var(--muted); }
+.health .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+.health .hwarn { font-size: 12px; color: var(--warn); line-height: 1.45; }
+
 /* ───── 모바일 대응 ───── */
 @media (max-width: 640px) {
   .container { padding: 18px 14px 48px; }
@@ -269,8 +299,9 @@ textarea { resize: vertical; min-height: 72px; }
   /* 대기 행: 번호+정보 한 줄, 액션 버튼은 아래 전체 폭으로 */
   .row { grid-template-columns: 48px 1fr; row-gap: 12px; padding: 13px 14px; }
   .row .num { width: 48px; height: 48px; font-size: 19px; }
-  .row .actions { grid-column: 1 / -1; justify-content: stretch; }
-  .row .actions .btn.small { flex: 1; padding: 11px 8px; }
+  /* 버튼이 세로로 글자가 쪼개지지 않도록 nowrap + 2줄 wrap 허용 */
+  .row .actions { grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; }
+  .row .actions .btn.small { flex: 1 1 auto; min-width: 74px; white-space: nowrap; padding: 10px 8px; }
 
   .modal { max-width: 100%; }
   .qr-box img { width: 220px; height: 220px; }

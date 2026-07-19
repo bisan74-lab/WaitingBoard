@@ -21,16 +21,18 @@ function newEntry({ number, name, phone, partySize, memo }) {
     phone: String(phone || '').trim(),
     partySize: Number(partySize) || 1,
     memo: String(memo || '').trim(),
-    status: 'waiting', // waiting | called | seated | cancelled
+    status: 'waiting', // waiting | called | coming | seated | cancelled
     createdAt: new Date().toISOString(),
-    calledAt: null,
+    calledAt: null,        // 최초 호출 시각
+    lastNotifiedAt: null,  // 마지막 알림 발송 시각(1분 재호출 판단용)
+    comingAt: null,        // 손님이 "가는 중" 응답한 시각(재호출 중지)
     seatedAt: null,
     notifiedCount: 0,
   };
 }
 
 function isActive(e) {
-  return e.status === 'waiting' || e.status === 'called';
+  return e.status === 'waiting' || e.status === 'called' || e.status === 'coming';
 }
 
 /** target 앞에 대기 중인 팀 수 */

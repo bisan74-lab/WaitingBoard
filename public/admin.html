@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>대기 관리 대시보드</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🍽%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -19,7 +20,8 @@
 
     <div class="stats">
       <div class="stat"><div class="n" id="statWaiting">0</div><div class="l">대기중</div></div>
-      <div class="stat"><div class="n" id="statCalled">0</div><div class="l">호출됨</div></div>
+      <div class="stat"><div class="n" id="statCalled">0</div><div class="l">호출중</div></div>
+      <div class="stat"><div class="n" id="statComing">0</div><div class="l">오는중</div></div>
       <div class="stat"><div class="n" id="statPeople">0</div><div class="l">대기 인원(명)</div></div>
     </div>
 
@@ -45,6 +47,10 @@
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal">
       <h3>설정</h3>
+
+      <div class="section-label">연결 상태</div>
+      <div id="healthBox" class="health"></div>
+
       <label for="storeName">가게 이름</label>
       <input id="storeName" type="text" maxlength="40" />
       <label for="tpl">카카오톡 호출 메시지 템플릿</label>
@@ -117,40 +123,74 @@
 
     const STATUS_PILL = {
       waiting: ['대기중', 'waiting'],
-      called: ['호출됨', 'called'],
-      seated: ['착석', 'seated'],
+      called: ['호출중', 'called'],
+      coming: ['오는중', 'coming'],
+      seated: ['처리완료', 'seated'],
       cancelled: ['취소', 'cancelled'],
     };
 
+    function telDigits(p) { return String(p || '').replace(/[^0-9]/g, ''); }
+
+    function rowHtml(e, done) {
+      const [plabel, pcls] = STATUS_PILL[e.status] || STATUS_PILL.waiting;
+      const digits = telDigits(e.phone);
+      // 호출 횟수/오는중 표기
+      let extra = '';
+      if (e.status === 'called' && e.notifiedCount) extra = ` · 📨 ${e.notifiedCount}회 호출(1분마다 재호출)`;
+      else if (e.status === 'coming') extra = ' · 🚶 오는 중(재호출 중지)';
+      else if (e.notifiedCount) extra = ` · 📨 ${e.notifiedCount}회`;
+
+      let actions;
+      if (done) {
+        // 처리완료: 되돌리기만 제공
+        actions = `<button class="btn small secondary" data-undo="${e.id}">↩︎ 되돌리기</button>`;
+      } else {
+        const callBtn = digits
+          ? `<a class="btn small callbtn" href="tel:${digits}">📞 전화</a>`
+          : `<button class="btn small callbtn" disabled>📞 없음</button>`;
+        const comingBtn = e.status === 'coming'
+          ? ''
+          : `<button class="btn small secondary" data-coming="${e.id}">🚶 오는중</button>`;
+        actions = `
+          ${callBtn}
+          <button class="btn small" data-notify="${e.id}">📨 호출</button>
+          ${comingBtn}
+          <button class="btn small secondary" data-seat="${e.id}">✅ 처리완료</button>
+          <button class="btn small secondary" data-cancel="${e.id}">✕ 취소</button>`;
+      }
+
+      return `
+      <div class="row ${e.status}${done ? ' done' : ''}">
+        <div class="num">${e.number}</div>
+        <div class="who">
+          <div class="name">${escapeHtml(e.name)} <span class="pill ${pcls}" style="margin-left:6px">${plabel}</span></div>
+          <div class="meta">${e.partySize}명 · ${maskPhone(e.phone)} · ${elapsed(e.createdAt)}${extra}</div>
+          ${e.memo ? `<div class="meta">📝 ${escapeHtml(e.memo)}</div>` : ''}
+        </div>
+        <div class="actions">${actions}</div>
+      </div>`;
+    }
+
     function render() {
+      // 활성(대기·호출·오는중)은 번호순 상단, 처리완료는 하단에 회색+취소선. 취소건은 숨김.
       const active = entries
-        .filter((e) => e.status === 'waiting' || e.status === 'called')
+        .filter((e) => e.status === 'waiting' || e.status === 'called' || e.status === 'coming')
         .sort((a, b) => a.number - b.number);
+      const done = entries
+        .filter((e) => e.status === 'seated')
+        .sort((a, b) => b.number - a.number);
 
       $('#statWaiting').textContent = active.filter((e) => e.status === 'waiting').length;
       $('#statCalled').textContent = active.filter((e) => e.status === 'called').length;
+      $('#statComing').textContent = active.filter((e) => e.status === 'coming').length;
       $('#statPeople').textContent = active.reduce((s, e) => s + (e.partySize || 0), 0);
 
       const list = $('#list');
-      $('#empty').style.display = active.length ? 'none' : 'block';
-      list.innerHTML = active.map((e) => {
-        const [plabel, pcls] = STATUS_PILL[e.status] || STATUS_PILL.waiting;
-        const notified = e.notifiedCount ? ` · 📨${e.notifiedCount}` : '';
-        return `
-        <div class="row ${e.status}">
-          <div class="num">${e.number}</div>
-          <div class="who">
-            <div class="name">${escapeHtml(e.name)} <span class="pill ${pcls}" style="margin-left:6px">${plabel}</span></div>
-            <div class="meta">${e.partySize}명 · ${maskPhone(e.phone)} · ${elapsed(e.createdAt)}${notified}</div>
-            ${e.memo ? `<div class="meta">📝 ${escapeHtml(e.memo)}</div>` : ''}
-          </div>
-          <div class="actions">
-            <button class="btn small" data-notify="${e.id}">📨 호출</button>
-            <button class="btn small secondary" data-seat="${e.id}">착석</button>
-            <button class="btn small secondary" data-cancel="${e.id}">취소</button>
-          </div>
-        </div>`;
-      }).join('');
+      $('#empty').style.display = active.length || done.length ? 'none' : 'block';
+      list.innerHTML =
+        active.map((e) => rowHtml(e, false)).join('') +
+        (done.length ? `<div class="done-label">처리완료 ${done.length}건</div>` : '') +
+        done.map((e) => rowHtml(e, true)).join('');
     }
 
     function escapeHtml(s) {
@@ -162,17 +202,23 @@
       const t = e.target.closest('button');
       if (!t) return;
       if (t.dataset.notify) openNotify(t.dataset.notify);
-      if (t.dataset.seat) setStatus(t.dataset.seat, 'seated');
-      if (t.dataset.cancel) {
+      else if (t.dataset.coming) setStatus(t.dataset.coming, 'coming');
+      else if (t.dataset.seat) setStatus(t.dataset.seat, 'seated');
+      else if (t.dataset.undo) setStatus(t.dataset.undo, 'waiting');
+      else if (t.dataset.cancel) {
         if (confirm('대기를 취소할까요?')) setStatus(t.dataset.cancel, 'cancelled');
       }
     });
 
+    const STATUS_MSG = { seated: '처리완료했습니다.', coming: '오는중으로 표시했습니다(재호출 중지).', cancelled: '취소했습니다.', waiting: '대기중으로 되돌렸습니다.' };
     async function setStatus(id, status) {
       try {
         const res = await api(`/api/waitlist/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
         if (!res.ok) throw new Error((await res.json()).error);
-        toast(status === 'seated' ? '착석 처리했습니다.' : '취소했습니다.', 'ok');
+        // 즉시 반영
+        const e = entries.find((x) => x.id === id); if (e) e.status = status;
+        render();
+        toast(STATUS_MSG[status] || '처리했습니다.', 'ok');
       } catch (err) { toast(err.message || '처리 실패', 'err'); }
     }
 
@@ -227,11 +273,38 @@
     };
 
     // ----- 설정 모달 -----
+    const MODE_LABEL = { demo: '데모(발송 안 함)', solapi: 'Solapi 알림톡', nhncloud: 'NHN Cloud 알림톡', aligo: 'Aligo 알림톡', kakao_memo: '나에게보내기' };
+
+    async function renderHealth() {
+      const box = $('#healthBox');
+      box.innerHTML = '<div class="muted" style="font-size:13px">확인 중…</div>';
+      try {
+        const res = await api('/api/health');
+        const h = await res.json();
+        const st = h.storage || {};
+        const storageLabel = st.backend === 'redis' ? 'Redis(KV)' : '파일(로컬)';
+        const live = h.messaging && h.messaging.live;
+        const prov = h.messaging ? h.messaging.provider : 'demo';
+        const warnStorage = h.serverless && st.backend !== 'redis';
+        box.innerHTML = `
+          <div class="hrow"><span>💾 저장소</span>
+            <span><span class="dot ${st.connected ? 'ok' : 'bad'}"></span>${storageLabel} · ${st.connected ? '연결됨' : '오류'}</span></div>
+          <div class="hrow"><span>📨 알림톡 발송</span>
+            <span><span class="dot ${live ? 'ok' : 'off'}"></span>${MODE_LABEL[prov] || prov}</span></div>
+          ${warnStorage ? '<div class="hwarn">⚠ Vercel 환경인데 KV가 없어 데이터가 유지되지 않습니다. Storage 탭에서 KV를 연결하세요.</div>' : ''}
+          ${!live ? '<div class="hwarn">ℹ 실제 손님 발송을 하려면 알림톡 업체를 연동하세요(현재 데모).</div>' : ''}
+        `;
+      } catch (e) {
+        box.innerHTML = '<div class="hwarn">상태 확인 실패</div>';
+      }
+    }
+
     $('#settingsBtn').onclick = () => {
       $('#storeName').value = settings.storeName;
       $('#tpl').value = settings.messageTemplate;
       $('#settingsError').classList.remove('show');
       $('#settingsModal').classList.add('show');
+      renderHealth();
     };
     $('#settingsCancel').onclick = () => $('#settingsModal').classList.remove('show');
     $('#settingsSave').onclick = async () => {
@@ -267,12 +340,12 @@
       if (loadInFlight) return;
       loadInFlight = true;
       try {
-        const res = await api('/api/waitlist');
+        const res = await api('/api/waitlist?all=1');
         if (!res.ok) throw new Error('목록 로드 실패');
         const d = await res.json();
         entries = d.entries; settings = d.settings;
-        const MODE_LABEL = { demo: '데모', solapi: 'Solapi 알림톡', nhncloud: 'NHN Cloud 알림톡', aligo: 'Aligo 알림톡', kakao_memo: '나에게보내기' };
-        $('#kakaoMode').textContent = '발송: ' + (MODE_LABEL[d.kakaoMode] || d.kakaoMode);
+        const shortLabel = { demo: '데모', solapi: 'Solapi 알림톡', nhncloud: 'NHN Cloud 알림톡', aligo: 'Aligo 알림톡', kakao_memo: '나에게보내기' };
+        $('#kakaoMode').textContent = '발송: ' + (shortLabel[d.kakaoMode] || d.kakaoMode);
         applySettings(); render();
       } finally {
         loadInFlight = false;
@@ -287,6 +360,11 @@
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') load().catch(() => {});
       });
+      // 자동 재호출 보조 트리거(서버리스/대시보드 개방 시). 서버가 이미 처리해도
+      // 멱등하므로 안전합니다. 로컬 미니PC는 서버 자체 타이머로 동작합니다.
+      setInterval(() => {
+        if (document.visibilityState === 'visible') api('/api/cron/recall', { method: 'POST' }).catch(() => {});
+      }, 30000);
     }
 
     load().then(startPolling).catch((err) => toast(err.message, 'err'));
