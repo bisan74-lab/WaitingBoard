@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const os = require('os');
 const express = require('express');
 const QRCode = require('qrcode');
 
@@ -248,6 +249,18 @@ function publicStatusUrl(id) {
   return base ? `${base}/status/${id}` : '';
 }
 
+// 같은 네트워크(휴대폰)에서 접속할 수 있는 이 PC의 LAN IPv4 주소 목록
+function lanAddresses() {
+  const nets = os.networkInterfaces();
+  const out = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) out.push(net.address);
+    }
+  }
+  return out;
+}
+
 async function recallOne(entry, settings) {
   const text = renderTemplate(settings.messageTemplate, entry, settings);
   const url = publicStatusUrl(entry.id);
@@ -289,8 +302,10 @@ async function processRecalls() {
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`\n  🍽  대기 관리 서버 실행 중`);
-    console.log(`  · 손님 등록:  http://localhost:${PORT}/`);
-    console.log(`  · 관리자:     http://localhost:${PORT}/admin`);
+    console.log(`  · 이 PC에서:  http://localhost:${PORT}/  (관리자: /admin)`);
+    for (const ip of lanAddresses()) {
+      console.log(`  · 같은 와이파이의 휴대폰에서:  http://${ip}:${PORT}/`);
+    }
     console.log(`  · 카카오 모드: ${kakao.currentMode()}`);
     if (ADMIN_PASSCODE) console.log('  · 관리자 암호 보호: 사용');
     console.log(`  · 자동 재호출: ${Math.round(RECALL_INTERVAL_MS / 1000)}초 간격, 최대 ${RECALL_MAX || '무제한'}회`);
