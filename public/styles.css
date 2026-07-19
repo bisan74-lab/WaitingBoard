@@ -221,6 +221,8 @@ textarea { resize: vertical; min-height: 72px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
 .btn.callbtn { background: var(--card-2); border: 1px solid var(--line); color: var(--text); }
 .btn.callbtn[disabled] { opacity: .45; }
+.btn.smsbtn { background: #16a34a; border: none; color: #fff; }
+.btn.kakaobtn { background: #fee500; border: none; color: #3c1e1e; }
 
 /* 오는중 pill */
 .pill.coming { color: #fff; background: rgba(34,197,94,.16); border-color: rgba(34,197,94,.4); }

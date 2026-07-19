@@ -131,6 +131,54 @@
 
     function telDigits(p) { return String(p || '').replace(/[^0-9]/g, ''); }
 
+    // 클립보드 복사 (HTTPS/최신 브라우저는 clipboard API, 아니면 execCommand 폴백)
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return ok;
+        } catch (__) { return false; }
+      }
+    }
+
+    // 손님에게 보낼 호출 메시지(설정의 카카오 템플릿과 동일)
+    function messageFor(e) { return renderTpl(settings.messageTemplate, e); }
+
+    // 💬 문자: 문자앱을 받는사람 번호 + 메시지 내용까지 채운 채로 연다. (내용은 클립보드에도 복사)
+    async function sendSms(id) {
+      const e = entries.find((x) => x.id === id);
+      if (!e) return;
+      const digits = telDigits(e.phone);
+      if (!digits) { toast('연락처가 없습니다.', 'err'); return; }
+      const msg = messageFor(e);
+      await copyText(msg); // 일부 기기가 body 자동입력을 무시해도 붙여넣기로 대비
+      // iOS는 sms:번호&body=, Android는 sms:번호?body= 형식을 사용
+      const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
+      const sep = ios ? '&' : '?';
+      window.location.href = `sms:${digits}${sep}body=${encodeURIComponent(msg)}`;
+      toast('문자앱을 엽니다 (내용도 복사됨)', 'ok');
+    }
+
+    // 🟡 카톡: 메시지를 복사한 뒤 카카오톡 앱을 연다. (카카오는 받는사람·내용 자동입력 불가 → 손님 대화방에 붙여넣기)
+    async function sendKakao(id) {
+      const e = entries.find((x) => x.id === id);
+      if (!e) return;
+      const ok = await copyText(messageFor(e));
+      toast(ok ? '메시지 복사됨 · 카카오톡에서 손님 대화방에 붙여넣기 하세요' : '복사 실패 — 길게 눌러 직접 복사하세요', ok ? 'ok' : 'err');
+      // 카카오톡 앱 열기 시도(설치돼 있으면 앱이 열림). 데스크톱/미설치 기기에서는 무시됩니다.
+      setTimeout(() => { window.location.href = 'kakaotalk://'; }, 500);
+    }
+
     function rowHtml(e, done) {
       const [plabel, pcls] = STATUS_PILL[e.status] || STATUS_PILL.waiting;
       const digits = telDigits(e.phone);
@@ -148,11 +196,17 @@
         const callBtn = digits
           ? `<a class="btn small callbtn" href="tel:${digits}">📞 전화</a>`
           : `<button class="btn small callbtn" disabled>📞 없음</button>`;
+        const smsBtn = digits
+          ? `<button class="btn small smsbtn" data-sms="${e.id}">💬 문자</button>`
+          : '';
+        const kakaoBtn = `<button class="btn small kakaobtn" data-kakao="${e.id}">🟡 카톡</button>`;
         const comingBtn = e.status === 'coming'
           ? ''
           : `<button class="btn small secondary" data-coming="${e.id}">🚶 오는중</button>`;
         actions = `
           ${callBtn}
+          ${smsBtn}
+          ${kakaoBtn}
           <button class="btn small" data-notify="${e.id}">📨 호출</button>
           ${comingBtn}
           <button class="btn small secondary" data-seat="${e.id}">✅ 처리완료</button>
@@ -201,7 +255,9 @@
     $('#list').addEventListener('click', (e) => {
       const t = e.target.closest('button');
       if (!t) return;
-      if (t.dataset.notify) openNotify(t.dataset.notify);
+      if (t.dataset.sms) sendSms(t.dataset.sms);
+      else if (t.dataset.kakao) sendKakao(t.dataset.kakao);
+      else if (t.dataset.notify) openNotify(t.dataset.notify);
       else if (t.dataset.coming) setStatus(t.dataset.coming, 'coming');
       else if (t.dataset.seat) setStatus(t.dataset.seat, 'seated');
       else if (t.dataset.undo) setStatus(t.dataset.undo, 'waiting');
