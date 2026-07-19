@@ -154,7 +154,20 @@
     // 손님에게 보낼 호출 메시지(설정의 카카오 템플릿과 동일)
     function messageFor(e) { return renderTpl(settings.messageTemplate, e); }
 
-    // 💬 문자: 문자앱을 받는사람 번호 + 메시지 내용까지 채운 채로 연다. (내용은 클립보드에도 복사)
+    // 호출 알림(문자/카톡)을 보냈으면 대기중 → 호출중으로 표시(대시보드 반영).
+    // 이미 호출중/오는중/처리완료/취소면 그대로 둔다(오는중을 되돌리지 않음).
+    async function markCalled(id) {
+      const e = entries.find((x) => x.id === id);
+      if (!e || e.status !== 'waiting') return;
+      try {
+        await api(`/api/waitlist/${id}/status`, { method: 'POST', body: JSON.stringify({ status: 'called' }) });
+        e.status = 'called';
+        e.calledAt = e.calledAt || new Date().toISOString();
+        render();
+      } catch (_) { /* 표시 갱신 실패해도 발송은 진행 */ }
+    }
+
+    // 💬 문자(기본 호출 수단): 문자앱을 받는사람 번호 + 메시지 내용까지 채운 채로 연다. (내용은 클립보드에도 복사)
     async function sendSms(id) {
       const e = entries.find((x) => x.id === id);
       if (!e) return;
@@ -162,19 +175,21 @@
       if (!digits) { toast('연락처가 없습니다.', 'err'); return; }
       const msg = messageFor(e);
       await copyText(msg); // 일부 기기가 body 자동입력을 무시해도 붙여넣기로 대비
+      markCalled(id); // 발송과 동시에 '호출중'으로 표시(배경 처리)
       // iOS는 sms:번호&body=, Android는 sms:번호?body= 형식을 사용
       const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
       const sep = ios ? '&' : '?';
       window.location.href = `sms:${digits}${sep}body=${encodeURIComponent(msg)}`;
-      toast('문자앱을 엽니다 (내용도 복사됨)', 'ok');
+      toast('문자앱을 엽니다 · 호출중으로 표시', 'ok');
     }
 
-    // 🟡 카톡: 메시지를 복사한 뒤 카카오톡 앱을 연다. (카카오는 받는사람·내용 자동입력 불가 → 손님 대화방에 붙여넣기)
+    // 🟡 카톡(보조·단골용): 메시지를 복사한 뒤 카카오톡 앱을 연다. (카카오는 받는사람·내용 자동입력 불가 → 손님 대화방에 붙여넣기)
     async function sendKakao(id) {
       const e = entries.find((x) => x.id === id);
       if (!e) return;
       const ok = await copyText(messageFor(e));
-      toast(ok ? '메시지 복사됨 · 카카오톡에서 손님 대화방에 붙여넣기 하세요' : '복사 실패 — 길게 눌러 직접 복사하세요', ok ? 'ok' : 'err');
+      markCalled(id); // 발송과 동시에 '호출중'으로 표시(배경 처리)
+      toast(ok ? '메시지 복사됨 · 카톡 대화방에 붙여넣기 · 호출중으로 표시' : '복사 실패 — 길게 눌러 직접 복사하세요', ok ? 'ok' : 'err');
       // 카카오톡 앱 열기 시도(설치돼 있으면 앱이 열림). 데스크톱/미설치 기기에서는 무시됩니다.
       setTimeout(() => { window.location.href = 'kakaotalk://'; }, 500);
     }
@@ -203,11 +218,11 @@
         const comingBtn = e.status === 'coming'
           ? ''
           : `<button class="btn small secondary" data-coming="${e.id}">🚶 오는중</button>`;
+        // 💬 문자 = 기본 호출 수단(맨 앞·강조). 📨 호출(데모 알림톡)은 대행사 미사용으로 제거.
         actions = `
-          ${callBtn}
           ${smsBtn}
+          ${callBtn}
           ${kakaoBtn}
-          <button class="btn small" data-notify="${e.id}">📨 호출</button>
           ${comingBtn}
           <button class="btn small secondary" data-seat="${e.id}">✅ 처리완료</button>
           <button class="btn small secondary" data-cancel="${e.id}">✕ 취소</button>`;
@@ -257,7 +272,6 @@
       if (!t) return;
       if (t.dataset.sms) sendSms(t.dataset.sms);
       else if (t.dataset.kakao) sendKakao(t.dataset.kakao);
-      else if (t.dataset.notify) openNotify(t.dataset.notify);
       else if (t.dataset.coming) setStatus(t.dataset.coming, 'coming');
       else if (t.dataset.seat) setStatus(t.dataset.seat, 'seated');
       else if (t.dataset.undo) setStatus(t.dataset.undo, 'waiting');

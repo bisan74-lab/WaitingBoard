@@ -282,7 +282,11 @@ async function recallOne(entry, settings) {
 }
 
 // 응답이 없는 '호출됨' 손님을 1분마다 재호출. coming/seated/cancelled 는 제외됩니다.
+// 서버 자동 재호출은 서버가 직접 보낼 수 있는 실제 발송 채널(알림톡 등)이 있을 때만 의미가 있습니다.
+// 문자(SMS)는 관리자 휴대폰에서 직접 보내므로 서버가 대신 보낼 수 없습니다.
+// 따라서 발송 provider가 demo(대행사 미연동)이면 자동 재호출을 하지 않습니다.
 async function processRecalls() {
+  if (kakao.currentMode() === 'demo') return 0;
   const now = Date.now();
   const settings = await db.getSettings();
   const list = await db.getEntries({ includeArchived: false });
