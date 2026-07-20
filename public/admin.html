@@ -169,8 +169,12 @@
       }
     }
 
-    // 손님에게 보낼 호출 메시지(설정의 카카오 템플릿과 동일)
-    function messageFor(e) { return renderTpl(settings.messageTemplate, e); }
+    // 손님에게 보낼 호출 메시지 = 설정 템플릿 + 실시간 순번 확인 링크(손님이 주소를 잊어도 문자로 다시 열 수 있게)
+    function messageFor(e) {
+      const base = renderTpl(settings.messageTemplate, e);
+      const link = `${location.origin}/status/${e.id}`;
+      return `${base}\n내 순번 실시간 확인 ▶ ${link}`;
+    }
 
     // 호출 알림(문자/카톡)을 보냈으면 대기중 → 호출중으로 표시(대시보드 반영).
     // 이미 호출중/오는중/처리완료/취소면 그대로 둔다(오는중을 되돌리지 않음).
