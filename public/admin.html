@@ -253,13 +253,21 @@
       </div>`;
     }
 
+    // 오늘(브라우저 로컬=매장 시간) 등록건인지
+    function isToday(iso) {
+      if (!iso) return false;
+      const d = new Date(iso), n = new Date();
+      return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+    }
+
     function render() {
       // 활성(대기·호출·오는중)은 번호순 상단, 처리완료는 하단에 회색+취소선. 취소건은 숨김.
+      // 대기번호가 매일 리셋되므로, 처리완료는 오늘 건만 표시(이전 날 번호와 겹치지 않도록).
       const active = entries
         .filter((e) => e.status === 'waiting' || e.status === 'called' || e.status === 'coming')
         .sort((a, b) => a.number - b.number);
       const done = entries
-        .filter((e) => e.status === 'seated')
+        .filter((e) => e.status === 'seated' && isToday(e.createdAt))
         .sort((a, b) => b.number - a.number);
 
       $('#statWaiting').textContent = active.filter((e) => e.status === 'waiting').length;

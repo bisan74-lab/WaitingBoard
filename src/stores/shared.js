@@ -6,11 +6,18 @@ const DEFAULT_SETTINGS = {
   storeName: '우리 식당',
   // {name} {party} {store} {number} 치환자 사용 가능
   messageTemplate:
-    '[{store}] {name}님, 대기하신 {party}명 자리가 준비되었습니다. 입장해 주세요! (대기번호 {number}번)',
+    '[{store}] {name}님, 대기하신 {party}명 자리가 준비되었습니다. {store}으로 이동해 주세요! (대기번호 {number}번)',
 };
 
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// 대기번호 리셋 기준 날짜(YYYY-MM-DD). 기본 한국시간(UTC+9) — 서버가 UTC여도 KST 자정에 리셋.
+const DAY_OFFSET_HOURS = Number(process.env.RESET_TZ_OFFSET_HOURS || 9);
+function dayKey(date = new Date()) {
+  const shifted = new Date(date.getTime() + DAY_OFFSET_HOURS * 3600 * 1000);
+  return shifted.toISOString().slice(0, 10);
 }
 
 function newEntry({ number, name, phone, partySize, memo }) {
@@ -43,4 +50,4 @@ function computeAhead(entries, target) {
   ).length;
 }
 
-module.exports = { DEFAULT_SETTINGS, genId, newEntry, isActive, computeAhead };
+module.exports = { DEFAULT_SETTINGS, genId, newEntry, isActive, computeAhead, dayKey };

@@ -9,7 +9,7 @@
  *   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (Upstash 직접)
  */
 
-const { DEFAULT_SETTINGS, newEntry, isActive, computeAhead } = require('./shared');
+const { DEFAULT_SETTINGS, newEntry, isActive, computeAhead, dayKey } = require('./shared');
 
 const REST_URL =
   process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '';
@@ -71,7 +71,13 @@ async function getEntry(id) {
   return raw ? JSON.parse(raw) : null;
 }
 async function addEntry(data) {
-  const number = await cmd(['INCR', K.counter]);
+  // 날짜별 카운터 키 → 자정(KST)에 자동으로 1번부터 시작
+  const counterKey = `${K.counter}:${dayKey()}`;
+  const number = await cmd(['INCR', counterKey]);
+  if (Number(number) === 1) {
+    // 그날 첫 손님일 때만 만료 설정(2일) — 오래된 카운터 키 자동 정리
+    await cmd(['EXPIRE', counterKey, 172800]);
+  }
   const entry = newEntry({ ...data, number: Number(number) });
   await cmd(['HSET', K.entries, entry.id, JSON.stringify(entry)]);
   return entry;

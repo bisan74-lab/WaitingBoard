@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { DEFAULT_SETTINGS, newEntry, isActive, computeAhead } = require('./shared');
+const { DEFAULT_SETTINGS, newEntry, isActive, computeAhead, dayKey } = require('./shared');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -23,14 +23,15 @@ function load() {
       state = {
         settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
         counter: parsed.counter || 0,
+        counterDate: parsed.counterDate || null,
         entries: Array.isArray(parsed.entries) ? parsed.entries : [],
       };
     } else {
-      state = { settings: { ...DEFAULT_SETTINGS }, counter: 0, entries: [] };
+      state = { settings: { ...DEFAULT_SETTINGS }, counter: 0, counterDate: null, entries: [] };
     }
   } catch (err) {
     console.error('저장소 로드 실패, 초기 상태로 시작:', err.message);
-    state = { settings: { ...DEFAULT_SETTINGS }, counter: 0, entries: [] };
+    state = { settings: { ...DEFAULT_SETTINGS }, counter: 0, counterDate: null, entries: [] };
   }
   return state;
 }
@@ -70,6 +71,12 @@ async function getEntry(id) {
 }
 async function addEntry(data) {
   const s = load();
+  const today = dayKey();
+  // 날짜가 바뀌면 대기번호를 1부터 다시 시작
+  if (s.counterDate !== today) {
+    s.counterDate = today;
+    s.counter = 0;
+  }
   s.counter += 1;
   const entry = newEntry({ ...data, number: s.counter });
   s.entries.push(entry);
