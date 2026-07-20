@@ -97,9 +97,17 @@ async function positionAhead(id) {
 async function waitingCount() {
   return load().entries.filter((e) => e.status === 'waiting').length;
 }
+// 전체 초기화: 대기목록 삭제 + 대기번호 카운터 리셋(다음 등록이 1번)
+async function reset() {
+  const s = load();
+  s.entries = [];
+  s.counter = 0;
+  s.counterDate = null;
+  persist();
+}
 
 module.exports = {
   backend: 'file',
   getSettings, updateSettings, getEntries, getEntry,
-  addEntry, patchEntry, positionAhead, waitingCount,
+  addEntry, patchEntry, positionAhead, waitingCount, reset,
 };

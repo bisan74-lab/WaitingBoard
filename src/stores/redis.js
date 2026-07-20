@@ -96,10 +96,15 @@ async function positionAhead(id) {
 async function waitingCount() {
   return (await allEntries()).filter((e) => e.status === 'waiting').length;
 }
+// 전체 초기화: 대기목록 삭제 + 오늘 대기번호 카운터 삭제(다음 등록이 1번)
+async function reset() {
+  await cmd(['DEL', K.entries]);
+  await cmd(['DEL', `${K.counter}:${dayKey()}`]);
+}
 
 module.exports = {
   backend: 'redis',
   isConfigured,
   getSettings, updateSettings, getEntries, getEntry,
-  addEntry, patchEntry, positionAhead, waitingCount,
+  addEntry, patchEntry, positionAhead, waitingCount, reset,
 };

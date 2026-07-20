@@ -179,6 +179,13 @@ app.post('/api/waitlist/:id/notify', requireAdmin, wrap(async (req, res) => {
   res.json({ ok: true, mode: result.mode, text, entry: updated });
 }));
 
+// ---------- 관리자: 전체 초기화 ----------
+// 대기목록 전체 삭제 + 대기번호 1번부터 다시 시작
+app.post('/api/reset', requireAdmin, wrap(async (req, res) => {
+  await db.reset();
+  res.json({ ok: true });
+}));
+
 // ---------- 관리자: 설정 ----------
 app.get('/api/settings', requireAdmin, wrap(async (req, res) => {
   res.json(await db.getSettings());
