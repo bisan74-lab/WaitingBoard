@@ -32,8 +32,12 @@
   <!-- QR 모달 -->
   <div class="modal-backdrop" id="qrModal">
     <div class="modal qr-box">
-      <h3>손님 등록 QR</h3>
-      <p class="muted" style="font-size:13px">손님이 스캔하면 대기 등록 화면이 열립니다.</p>
+      <h3 id="qrTitle">손님 등록 QR</h3>
+      <div class="flex" style="margin-bottom:12px">
+        <button class="btn small grow" id="qrTabCustomer">🧑 손님 등록</button>
+        <button class="btn small secondary grow" id="qrTabAdmin">🔑 관리자 접속</button>
+      </div>
+      <p class="muted" id="qrDesc" style="font-size:13px">손님이 스캔하면 대기 등록 화면이 열립니다.</p>
       <img id="qrImg" alt="QR" />
       <p class="muted" id="qrUrl" style="font-size:12px;word-break:break-all"></p>
       <div class="flex" style="margin-top:10px">
@@ -84,6 +88,15 @@
   <script>
     const $ = (s) => document.querySelector(s);
     let PASSCODE = sessionStorage.getItem('adminPasscode') || '';
+    // QR로 접속 시 URL의 ?passcode= 를 받아 자동 로그인. 이후 주소창에서 제거(보안).
+    (function ingestPasscode() {
+      const p = new URLSearchParams(location.search).get('passcode');
+      if (p) {
+        PASSCODE = p;
+        sessionStorage.setItem('adminPasscode', p);
+        history.replaceState(null, '', location.pathname + location.hash);
+      }
+    })();
     let settings = { storeName: '', messageTemplate: '' };
     let entries = [];
 
@@ -325,19 +338,37 @@
     };
 
     // ----- QR 모달 -----
-    $('#qrBtn').onclick = async () => {
-      $('#qrModal').classList.add('show');
-      const res = await fetch('/api/qr');
-      const d = await res.json();
-      $('#qrImg').src = d.qr;
-      $('#qrUrl').textContent = d.url;
-    };
+    let currentQrType = 'customer';
+    async function loadQr(type) {
+      currentQrType = type;
+      const isAdmin = type === 'admin';
+      $('#qrTitle').textContent = isAdmin ? '관리자 접속 QR' : '손님 등록 QR';
+      $('#qrDesc').innerHTML = isAdmin
+        ? '스캔하면 <b>암호 입력 없이</b> 관리자 화면이 열립니다.<br/>⚠️ 암호가 포함된 QR이니 외부에 노출·게시하지 마세요.'
+        : '손님이 스캔하면 대기 등록 화면이 열립니다.';
+      $('#qrTabCustomer').className = 'btn small grow' + (isAdmin ? ' secondary' : '');
+      $('#qrTabAdmin').className = 'btn small grow' + (isAdmin ? '' : ' secondary');
+      $('#qrImg').removeAttribute('src');
+      $('#qrUrl').textContent = '불러오는 중...';
+      try {
+        const res = isAdmin ? await api('/api/qr/admin') : await fetch('/api/qr');
+        const d = await res.json();
+        $('#qrImg').src = d.qr;
+        $('#qrUrl').textContent = d.url;
+      } catch (e) {
+        $('#qrUrl').textContent = 'QR 생성 실패';
+      }
+    }
+    $('#qrBtn').onclick = () => { $('#qrModal').classList.add('show'); loadQr('customer'); };
+    $('#qrTabCustomer').onclick = () => loadQr('customer');
+    $('#qrTabAdmin').onclick = () => loadQr('admin');
     $('#qrClose').onclick = () => $('#qrModal').classList.remove('show');
     $('#qrPrint').onclick = () => {
       const w = window.open('', '_blank');
+      const sub = currentQrType === 'admin' ? '관리자 접속용 QR (외부 노출 주의)' : 'QR을 스캔하여 대기 등록하세요';
       w.document.write(`<div style="text-align:center;font-family:sans-serif;padding:40px">
-        <h2>${escapeHtml(settings.storeName || '대기 등록')}</h2>
-        <p>QR을 스캔하여 대기 등록하세요</p>
+        <h2>${escapeHtml(settings.storeName || '대기')}</h2>
+        <p>${sub}</p>
         <img src="${$('#qrImg').src}" style="width:340px"/></div>`);
       w.document.close(); w.focus(); w.print();
     };

@@ -202,6 +202,22 @@ app.get('/api/qr', wrap(async (req, res) => {
   res.json({ url: target, qr: dataUrl });
 }));
 
+// ---------- 관리자 접속 QR (암호 자동 포함) ----------
+// 스캔하면 /admin?passcode=<암호> 로 열려 별도 입력 없이 관리자 화면에 진입합니다.
+// 암호가 담긴 QR이므로 관리자 인증이 있어야 발급됩니다.
+app.get('/api/qr/admin', requireAdmin, wrap(async (req, res) => {
+  const base = baseUrl(req);
+  const target = ADMIN_PASSCODE
+    ? `${base}/admin?passcode=${encodeURIComponent(ADMIN_PASSCODE)}`
+    : `${base}/admin`;
+  const dataUrl = await QRCode.toDataURL(target, {
+    width: 480,
+    margin: 2,
+    color: { dark: '#1f2937', light: '#ffffff' },
+  });
+  res.json({ url: target, qr: dataUrl, protected: Boolean(ADMIN_PASSCODE) });
+}));
+
 // ---------- 정적 파일 & 페이지 ----------
 app.use(express.static(path.join(__dirname, 'public')));
 
