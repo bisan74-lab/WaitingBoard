@@ -61,6 +61,20 @@
       <label for="tpl">카카오톡 호출 메시지 템플릿</label>
       <textarea id="tpl" maxlength="300"></textarea>
       <p class="muted" style="font-size:12px">치환자: <code>{name}</code> <code>{party}</code> <code>{store}</code> <code>{number}</code></p>
+
+      <div class="section-label" style="margin-top:16px">예상 대기시간 설정</div>
+      <div class="flex" style="gap:12px">
+        <div class="grow">
+          <label for="avgTurn">평균 회전시간(분)</label>
+          <input id="avgTurn" type="number" min="1" max="600" inputmode="numeric" />
+        </div>
+        <div class="grow">
+          <label for="tableCount">테이블 수</label>
+          <input id="tableCount" type="number" min="1" max="500" inputmode="numeric" />
+        </div>
+      </div>
+      <p class="muted" style="font-size:12px">예상 대기 = 앞 팀 수 × 평균 회전시간 ÷ 테이블 수</p>
+
       <div id="settingsError" class="error"></div>
       <div class="flex" style="margin-top:14px">
         <button class="btn small secondary grow" id="settingsCancel">취소</button>
@@ -426,6 +440,8 @@
     $('#settingsBtn').onclick = () => {
       $('#storeName').value = settings.storeName;
       $('#tpl').value = settings.messageTemplate;
+      $('#avgTurn').value = settings.avgTurnMinutes != null ? settings.avgTurnMinutes : 40;
+      $('#tableCount').value = settings.tableCount != null ? settings.tableCount : 5;
       $('#settingsError').classList.remove('show');
       $('#settingsModal').classList.add('show');
       renderHealth();
@@ -435,7 +451,12 @@
       try {
         const res = await api('/api/settings', {
           method: 'PUT',
-          body: JSON.stringify({ storeName: $('#storeName').value.trim(), messageTemplate: $('#tpl').value }),
+          body: JSON.stringify({
+            storeName: $('#storeName').value.trim(),
+            messageTemplate: $('#tpl').value,
+            avgTurnMinutes: Number($('#avgTurn').value),
+            tableCount: Number($('#tableCount').value),
+          }),
         });
         if (!res.ok) throw new Error((await res.json()).error);
         settings = await res.json();

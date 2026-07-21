@@ -7,6 +7,7 @@ const QRCode = require('qrcode');
 
 const db = require('./src/db');
 const kakao = require('./src/kakao');
+const { estimateWaitMinutes } = require('./src/stores/shared');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -77,12 +78,34 @@ app.get('/api/waitlist/:id/status', wrap(async (req, res) => {
   const entry = await db.getEntry(req.params.id);
   if (!entry) return res.status(404).json({ error: '대기 정보를 찾을 수 없습니다.' });
   const settings = await db.getSettings();
+  let ahead = 0, peopleAhead = 0, eta = 0;
+  if (entry.status === 'waiting') {
+    const a = await aheadOf(entry);
+    ahead = a.teams;
+    peopleAhead = a.people;
+    eta = estimateWaitMinutes(ahead, settings);
+  }
   res.json({
     number: entry.number,
     name: entry.name,
     partySize: entry.partySize,
     status: entry.status,
-    ahead: entry.status === 'waiting' ? await db.positionAhead(entry.id) : 0,
+    ahead,
+    peopleAhead,
+    estimatedWaitMinutes: eta,
+    storeName: settings.storeName,
+  });
+}));
+
+// ---------- 손님: 대기 요약 (등록 화면용) ----------
+// 새로 등록할 손님 기준: 현재 대기 중인 팀/인원 = 앞에 있는 팀/인원.
+app.get('/api/summary', wrap(async (req, res) => {
+  const settings = await db.getSettings();
+  const a = await aheadOf(null); // 전체 대기
+  res.json({
+    waitingTeams: a.teams,
+    waitingPeople: a.people,
+    estimatedWaitMinutes: estimateWaitMinutes(a.teams, settings),
     storeName: settings.storeName,
   });
 }));
@@ -213,10 +236,12 @@ app.get('/api/settings', requireAdmin, wrap(async (req, res) => {
   res.json(await db.getSettings());
 }));
 app.put('/api/settings', requireAdmin, wrap(async (req, res) => {
-  const { storeName, messageTemplate } = req.body || {};
+  const { storeName, messageTemplate, avgTurnMinutes, tableCount } = req.body || {};
   const patch = {};
   if (typeof storeName === 'string') patch.storeName = storeName;
   if (typeof messageTemplate === 'string') patch.messageTemplate = messageTemplate;
+  if (avgTurnMinutes !== undefined) patch.avgTurnMinutes = Math.max(1, Number(avgTurnMinutes) || 40);
+  if (tableCount !== undefined) patch.tableCount = Math.max(1, Number(tableCount) || 1);
   res.json(await db.updateSettings(patch));
 }));
 
@@ -294,6 +319,16 @@ function renderTemplate(tpl, entry, settings) {
     .replace(/\{party\}/g, entry.partySize)
     .replace(/\{store\}/g, settings.storeName)
     .replace(/\{number\}/g, entry.number);
+}
+
+// entry가 대기중일 때 앞에 있는 대기 팀/인원. entry=null 이면 전체 대기(신규 등록 기준).
+async function aheadOf(entry) {
+  const waiting = (await db.getEntries({ includeArchived: false })).filter((e) => e.status === 'waiting');
+  const ahead = entry ? waiting.filter((e) => e.createdAt < entry.createdAt) : waiting;
+  return {
+    teams: ahead.length,
+    people: ahead.reduce((s, e) => s + (e.partySize || 0), 0),
+  };
 }
 
 // ---------- 자동 재호출 로직 ----------

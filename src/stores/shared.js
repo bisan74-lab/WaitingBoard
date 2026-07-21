@@ -7,7 +7,17 @@ const DEFAULT_SETTINGS = {
   // {name} {party} {store} {number} 치환자 사용 가능
   messageTemplate:
     '[{store}] {name}님, 대기하신 {party}명 자리가 준비되었습니다. {store}으로 이동해 주세요! (대기번호 {number}번)',
+  avgTurnMinutes: 40, // 평균 테이블 회전(이용) 시간(분) — 예상 대기시간 산출용
+  tableCount: 5,      // 동시 수용 테이블 수
 };
+
+/** 예상 대기시간(분): 앞 팀 수 × 평균 회전시간 ÷ 테이블 수, 5분 단위 반올림 */
+function estimateWaitMinutes(teamsAhead, settings) {
+  const turn = Number(settings.avgTurnMinutes) || 40;
+  const tables = Math.max(1, Number(settings.tableCount) || 1);
+  const mins = (Number(teamsAhead) || 0) * turn / tables;
+  return Math.round(mins / 5) * 5;
+}
 
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -50,4 +60,4 @@ function computeAhead(entries, target) {
   ).length;
 }
 
-module.exports = { DEFAULT_SETTINGS, genId, newEntry, isActive, computeAhead, dayKey };
+module.exports = { DEFAULT_SETTINGS, genId, newEntry, isActive, computeAhead, dayKey, estimateWaitMinutes };

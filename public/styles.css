@@ -78,6 +78,21 @@ a { color: var(--brand-2); }
   padding: 22px;
 }
 
+/* 대기 요약 카드(등록 화면) */
+.summary-card {
+  background: linear-gradient(135deg, rgba(255,107,61,.13), rgba(255,138,92,.07));
+  border: 1px solid rgba(255,107,61,.35);
+  border-radius: var(--radius);
+  padding: 15px 18px;
+  margin-bottom: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.summary-row { display: flex; align-items: center; justify-content: space-between; }
+.summary-label { color: var(--muted); font-size: 14px; }
+.summary-val { font-size: 16px; font-weight: 700; }
+.summary-val b { color: var(--brand-2); font-size: 20px; }
+#sumEta { color: var(--brand-2); }
+
 .title {
   font-size: 26px;
   font-weight: 800;

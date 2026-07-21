@@ -109,9 +109,12 @@
 
         const area = $('#statusArea');
         if (d.status === 'waiting') {
-          area.innerHTML = d.ahead > 0
-            ? `<div class="ahead">앞에 <b>${d.ahead}</b>팀 대기 중</div>`
-            : `<div class="ahead">🎉 곧 입장하실 차례예요!</div>`;
+          if (d.ahead > 0) {
+            const eta = d.estimatedWaitMinutes > 0 ? ` · 예상 약 ${d.estimatedWaitMinutes}분` : '';
+            area.innerHTML = `<div class="ahead">앞에 <b>${d.ahead}</b>팀 (${d.peopleAhead}명) 대기 중${eta}</div>`;
+          } else {
+            area.innerHTML = `<div class="ahead">🎉 곧 입장하실 차례예요!</div>`;
+          }
         } else if (d.status === 'called') {
           area.innerHTML = `<div class="ahead">✅ <b>입장</b>해 주세요!</div>`;
         } else if (d.status === 'coming') {
