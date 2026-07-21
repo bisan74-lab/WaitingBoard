@@ -227,9 +227,11 @@ app.get('/api/qr/admin', requireAdmin, wrap(async (req, res) => {
 
 // ---------- 공개 설정 (카카오 등 프런트에서 쓰는 값) ----------
 // JavaScript 앱키는 공개용으로 설계된 값이라 프런트 노출이 정상입니다.
+// 카카오 JavaScript 키(공개용). 환경변수가 있으면 그것을 우선 사용합니다.
+const KAKAO_JS_KEY = process.env.KAKAO_JS_KEY || 'a6a54f9a79b212652ed4b52732d430a3';
 app.get('/api/public-config', (req, res) => {
   res.json({
-    kakaoJsKey: process.env.KAKAO_JS_KEY || '',
+    kakaoJsKey: KAKAO_JS_KEY,
     kakaoChannelId: process.env.KAKAO_CHANNEL_ID || '',
   });
 });
