@@ -225,6 +225,15 @@ app.get('/api/qr/admin', requireAdmin, wrap(async (req, res) => {
   res.json({ url: target, qr: dataUrl, protected: Boolean(ADMIN_PASSCODE) });
 }));
 
+// ---------- 공개 설정 (카카오 등 프런트에서 쓰는 값) ----------
+// JavaScript 앱키는 공개용으로 설계된 값이라 프런트 노출이 정상입니다.
+app.get('/api/public-config', (req, res) => {
+  res.json({
+    kakaoJsKey: process.env.KAKAO_JS_KEY || '',
+    kakaoChannelId: process.env.KAKAO_CHANNEL_ID || '',
+  });
+});
+
 // ---------- 정적 파일 & 페이지 ----------
 app.use(express.static(path.join(__dirname, 'public')));
 
