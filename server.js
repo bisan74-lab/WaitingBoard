@@ -129,6 +129,21 @@ app.post('/api/waitlist/:id/coming', wrap(async (req, res) => {
   res.json({ ok: true, status: updated.status });
 }));
 
+// ---------- 손님: 대기 취소 (본인 순번 화면에서) ----------
+// 고유한 순번 링크(id)를 가진 손님만 접근하므로 관리자 인증 없이 허용.
+app.post('/api/waitlist/:id/cancel', wrap(async (req, res) => {
+  const entry = await db.getEntry(req.params.id);
+  if (!entry) return res.status(404).json({ error: '대기 정보를 찾을 수 없습니다.' });
+  if (entry.status === 'seated') {
+    return res.status(400).json({ error: '이미 착석 처리되어 취소할 수 없습니다.' });
+  }
+  if (entry.status === 'cancelled') {
+    return res.json({ ok: true, status: 'cancelled' });
+  }
+  const updated = await db.patchEntry(entry.id, { status: 'cancelled' });
+  res.json({ ok: true, status: updated.status });
+}));
+
 // ---------- 자동 재호출 트리거 ----------
 // 로컬(미니PC)에서는 아래 setInterval이, Vercel에서는 Cron 또는 열려있는
 // 대시보드가 이 엔드포인트를 호출해 1분마다 응답 없는 손님을 재호출합니다.

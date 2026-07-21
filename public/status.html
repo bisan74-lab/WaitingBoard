@@ -34,6 +34,7 @@
       </div>
 
       <button id="kakaoShareBtn" class="btn secondary" style="display:none">💬 카카오톡으로 순번 저장·공유</button>
+      <button id="cancelBtn" class="btn danger" style="display:none">❌ 대기 취소</button>
 
       <p class="center muted" style="margin-top:18px;font-size:13px">
         이 화면은 자동으로 새로고침됩니다.<br/>자리가 준비되면 카카오톡 안내와 함께 여기에서 알려드려요.
@@ -67,6 +68,19 @@
     }
     $('#comingBtn').addEventListener('click', sendComing);
 
+    async function sendCancel() {
+      if (!confirm('대기를 취소하시겠어요?\n취소하면 순번이 사라지고 되돌릴 수 없습니다.')) return;
+      const btn = $('#cancelBtn');
+      btn.disabled = true; btn.textContent = '취소 중...';
+      try {
+        await fetch('/api/waitlist/' + id + '/cancel', { method: 'POST' });
+        refresh();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = '❌ 대기 취소';
+      }
+    }
+    $('#cancelBtn').addEventListener('click', sendCancel);
+
     async function refresh() {
       try {
         const res = await fetch('/api/waitlist/' + id + '/status');
@@ -88,6 +102,10 @@
         // '가는 중' 응답 버튼: 호출됨 상태에서만 노출
         $('#comingBtn').style.display = d.status === 'called' ? 'block' : 'none';
         $('#comingDone').style.display = d.status === 'coming' ? 'block' : 'none';
+        // '대기 취소' 버튼: 활성(대기/호출/오는중) 상태에서 노출
+        const active = d.status === 'waiting' || d.status === 'called' || d.status === 'coming';
+        $('#cancelBtn').style.display = active ? 'block' : 'none';
+        updateShareBtn();
 
         const area = $('#statusArea');
         if (d.status === 'waiting') {
@@ -109,11 +127,12 @@
     }
 
     // ----- 카카오톡 공유(순번 저장) -----
-    function showKakaoShareIfReady() {
-      if (window.WBKakao && WBKakao.hasKey()) $('#kakaoShareBtn').style.display = 'block';
+    function updateShareBtn() {
+      var active = ['waiting', 'called', 'coming'].indexOf(latest.status) >= 0;
+      var show = window.WBKakao && WBKakao.hasKey() && active;
+      $('#kakaoShareBtn').style.display = show ? 'block' : 'none';
     }
-    document.addEventListener('wbkakao:ready', showKakaoShareIfReady);
-    showKakaoShareIfReady(); // 이미 준비된 경우 대비
+    document.addEventListener('wbkakao:ready', updateShareBtn);
     $('#kakaoShareBtn').addEventListener('click', () => {
       const store = latest.storeName || '대기';
       const num = latest.number ? `${latest.number}번` : '';
