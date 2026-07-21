@@ -109,6 +109,13 @@ app.post('/api/waitlist/:id/status', requireAdmin, wrap(async (req, res) => {
   if (status === 'called') patch.calledAt = now;
   if (status === 'coming') patch.comingAt = now; // 재호출 중지
   if (status === 'seated') patch.seatedAt = now;
+  // 대기중으로 되돌리면(호출취소/되돌리기) 호출 관련 정보 초기화
+  if (status === 'waiting') {
+    patch.calledAt = null;
+    patch.lastNotifiedAt = null;
+    patch.comingAt = null;
+    patch.notifiedCount = 0;
+  }
   const updated = await db.patchEntry(req.params.id, patch);
   if (!updated) return res.status(404).json({ error: '대상을 찾을 수 없습니다.' });
   res.json(updated);

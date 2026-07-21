@@ -240,12 +240,17 @@
         const comingBtn = e.status === 'coming'
           ? ''
           : `<button class="btn small secondary" data-coming="${e.id}">🚶 오는중</button>`;
+        // 호출/오는중 상태면 '호출취소'(대기중으로 되돌리기) 제공 — 실수로 호출한 경우
+        const uncallBtn = (e.status === 'called' || e.status === 'coming')
+          ? `<button class="btn small secondary" data-uncall="${e.id}">↩︎ 호출취소</button>`
+          : '';
         // 💬 문자 = 기본 호출 수단(맨 앞·강조). 📨 호출(데모 알림톡)은 대행사 미사용으로 제거.
         actions = `
           ${smsBtn}
           ${callBtn}
           ${kakaoBtn}
           ${comingBtn}
+          ${uncallBtn}
           <button class="btn small secondary" data-seat="${e.id}">✅ 처리완료</button>
           <button class="btn small secondary" data-cancel="${e.id}">✕ 취소</button>`;
       }
@@ -303,6 +308,7 @@
       if (t.dataset.sms) sendSms(t.dataset.sms);
       else if (t.dataset.kakao) sendKakao(t.dataset.kakao);
       else if (t.dataset.coming) setStatus(t.dataset.coming, 'coming');
+      else if (t.dataset.uncall) setStatus(t.dataset.uncall, 'waiting');
       else if (t.dataset.seat) setStatus(t.dataset.seat, 'seated');
       else if (t.dataset.undo) setStatus(t.dataset.undo, 'waiting');
       else if (t.dataset.cancel) {
@@ -310,7 +316,7 @@
       }
     });
 
-    const STATUS_MSG = { seated: '처리완료했습니다.', coming: '오는중으로 표시했습니다(재호출 중지).', cancelled: '취소했습니다.', waiting: '대기중으로 되돌렸습니다.' };
+    const STATUS_MSG = { seated: '처리완료했습니다.', coming: '오는중으로 표시했습니다(재호출 중지).', cancelled: '취소했습니다.', waiting: '대기중으로 되돌렸습니다(호출 취소).' };
     async function setStatus(id, status) {
       try {
         const res = await api(`/api/waitlist/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
