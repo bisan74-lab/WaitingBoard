@@ -225,9 +225,16 @@ app.post('/api/waitlist/:id/notify', requireAdmin, wrap(async (req, res) => {
 }));
 
 // ---------- 관리자: 전체 초기화 ----------
-// 대기목록 전체 삭제 + 대기번호 1번부터 다시 시작
+// 모든 기록(전체 이력) 삭제 + 대기번호 1번부터 다시 시작
 app.post('/api/reset', requireAdmin, wrap(async (req, res) => {
   await db.reset();
+  res.json({ ok: true });
+}));
+
+// ---------- 관리자: 오늘 초기화 ----------
+// 오늘 등록된 대기만 삭제하고 오늘 번호를 1번부터 다시 시작. 이전 날짜 기록은 유지됩니다.
+app.post('/api/reset-today', requireAdmin, wrap(async (req, res) => {
+  await db.resetToday();
   res.json({ ok: true });
 }));
 

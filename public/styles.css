@@ -167,6 +167,7 @@ textarea { resize: vertical; min-height: 72px; }
 }
 .btn.small { width: auto; padding: 9px 14px; margin: 0; font-size: 14px; border-radius: 10px; }
 .btn.danger { background: var(--danger); border: none; color: #fff; }
+.btn.warn { background: var(--warn); border: none; color: #241a00; font-weight: 800; }
 
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
