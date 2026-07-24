@@ -266,6 +266,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .modal {
   background: var(--card); border: 1px solid var(--line);
   border-radius: 18px; width: 100%; max-width: 420px; padding: 22px;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .modal h3 { margin: 0 0 6px; }
 .qr-box { text-align: center; }
